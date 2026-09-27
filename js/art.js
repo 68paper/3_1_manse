@@ -49,36 +49,38 @@ export function skyGradient(t) {
 // ------------------------------------------------------------------
 // 태극 (S자) — 표준 세로 공식을 만든 뒤 -45도 회전해 대각선 버전으로 만든다
 // ------------------------------------------------------------------
+// 깃발 대각선(3:2) 각도: atan(2/3) ≈ 33.69°. 건(왼쪽 위)→곤(오른쪽 아래) 방향.
+const FLAG_DIAG_DEG = Math.atan2(2, 3) * 180 / Math.PI;
+
 function taegeukRedPath(cx, cy, r) {
-  // 표준 공식(세로 지름 기준, 회전 전): 원 하나를 두 개의 점대칭(180도) 콤마꼴로 나눈다.
-  // A r r 0 0 1 = 큰 반원(오른쪽으로 볼록), 이어 반지름 r/2 두 개로 S자를 완성.
-  // (경험적으로 검증: 이 세 arc 조합이 빈틈 없이 맞물리는 정확한 태극 콤마 모양이다.)
-  const top = `${cx} ${cy - r}`;
-  const bot = `${cx} ${cy + r}`;
-  return `M ${top} A ${r} ${r} 0 0 1 ${bot} A ${r / 2} ${r / 2} 0 0 1 ${cx} ${cy} A ${r / 2} ${r / 2} 0 0 0 ${top} Z`;
+  // 회전 전 기준: 지름이 가로(왼쪽 L → 오른쪽 R), 지름 위쪽이 빨강.
+  //  - 큰 반원: L → 위쪽 → R
+  //  - 오른쪽 작은 반원: R → C, 지름 "위로" 볼록 (파랑이 위로 파고듦)
+  //  - 왼쪽 작은 반원: C → L, 지름 "아래로" 볼록 (빨강이 아래로 파고듦)
+  const L = `${cx - r} ${cy}`, R = `${cx + r} ${cy}`, C = `${cx} ${cy}`;
+  return `M ${L} A ${r} ${r} 0 0 1 ${R} A ${r / 2} ${r / 2} 0 0 0 ${C} A ${r / 2} ${r / 2} 0 0 1 ${L} Z`;
 }
 
 /**
- * 태극(원) SVG 조각 문자열을 반환한다 (그 자체로 <g>).
- * painted=false면 먹색 테두리만(도장 전 상태), true면 빨강/파랑 채색.
- *
- * 구성: "빨강" 콤마 하나를 정의한 뒤, "파랑"은 그 콤마를 중심점 기준 180도
- * 회전시킨 것(점대칭)으로 만든다 — 이렇게 해야 두 조각이 빈틈 없이 원을 채운다.
- * 전체를 rotate(-45)로 돌려 "왼쪽 위(건)→오른쪽 아래(곤)" 대각선이 S자의 기준
- * 지름이 되게 하면, 대각선 위쪽(오른쪽 위 삼각 영역)이 빨강, 아래쪽이 파랑이 된다.
+ * 태극(원) SVG 조각. painted=false면 먹색 테두리만(도장 전), true면 빨강/파랑.
+ * 빨강 조각을 만들고, 파랑은 그 조각을 중심 기준 180도 돌린 것(점대칭).
+ * 전체를 깃발 대각선 각도(약 33.69°)로 돌려 건-곤 대각선을 기준 지름으로 삼는다.
+ * angleDeg를 주면 그 각도로(기록지 아이콘 등), 없으면 깃발 대각선 각도로 돌린다.
  */
-function taegeukGroup(cx, cy, r, painted) {
+function taegeukGroup(cx, cy, r, painted, angleDeg) {
+  const a = angleDeg == null ? FLAG_DIAG_DEG : angleDeg;
   const comma = taegeukRedPath(cx, cy, r);
+  const sw = Math.max(1, r * (painted ? 0.04 : 0.06));
   if (!painted) {
-    return `<g transform="rotate(-45 ${cx} ${cy})">
-      <path d="${comma}" fill="none" stroke="${PALETTE.ink}" stroke-width="${Math.max(1, r * 0.06)}"/>
-      <g transform="rotate(180 ${cx} ${cy})"><path d="${comma}" fill="none" stroke="${PALETTE.ink}" stroke-width="${Math.max(1, r * 0.06)}"/></g>
+    return `<g transform="rotate(${a} ${cx} ${cy})">
+      <path d="${comma}" fill="none" stroke="${PALETTE.ink}" stroke-width="${sw}"/>
+      <g transform="rotate(180 ${cx} ${cy})"><path d="${comma}" fill="none" stroke="${PALETTE.ink}" stroke-width="${sw}"/></g>
     </g>`;
   }
-  return `<g transform="rotate(-45 ${cx} ${cy})">
+  return `<g transform="rotate(${a} ${cx} ${cy})">
     <path d="${comma}" fill="${PALETTE.taegeukRed}"/>
     <g transform="rotate(180 ${cx} ${cy})"><path d="${comma}" fill="${PALETTE.taegeukBlue}"/></g>
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${PALETTE.ink}" stroke-width="${Math.max(1, r * 0.04)}"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${PALETTE.ink}" stroke-width="${sw}"/>
   </g>`;
 }
 
@@ -107,7 +109,8 @@ const TRIGRAM_PATTERN = {
  * 각 막대 자신의 긴 방향은 대각선에 수직이다.
  * filled=false면 옅은(미획득) 표시, true면 먹색(획득) 표시.
  */
-export function trigramIcon(key, size, filled) {
+export function trigramIcon(key, size, filled, angleDeg) {
+  const rot = angleDeg == null ? -45 : angleDeg;
   const pattern = TRIGRAM_PATTERN[key] || TRIGRAM_PATTERN.geon;
   const c = size / 2;
   const barLen = size * 0.62;   // 막대(수직 방향) 길이
@@ -132,7 +135,7 @@ export function trigramIcon(key, size, filled) {
            `<rect x="${x2}" y="${y}" width="${half}" height="${barThick}" fill="${color}" stroke="${strokeColor}" stroke-width="${size * 0.03}"/>`;
   }).join('');
   return `<svg class="art-trigram" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg" style="opacity:${opacity}">
-    <g transform="rotate(-45 ${c} ${c})">${bars}</g>
+    <g transform="rotate(${rot} ${c} ${c})">${bars}</g>
   </svg>`;
 }
 
@@ -150,7 +153,9 @@ export function taegeukgiFlag(width) {
   const cx = width / 2, cy = height / 2;
   const trigramSize = height * 0.30;
   const margin = height * 0.12;
-  const corner = (x, y, key) => `<g transform="translate(${x - trigramSize / 2} ${y - trigramSize / 2})">${trigramInner(key, trigramSize)}</g>`;
+  // 건·곤(왼쪽 위·오른쪽 아래)은 건-곤 대각선에, 감·리(오른쪽 위·왼쪽 아래)는 감-리 대각선에 막대가 수직
+  const angleFor = { geon: FLAG_DIAG_DEG - 90, gon: FLAG_DIAG_DEG - 90, gam: 90 - FLAG_DIAG_DEG, ri: 90 - FLAG_DIAG_DEG };
+  const corner = (x, y, key) => `<g transform="translate(${x - trigramSize / 2} ${y - trigramSize / 2})">${trigramInner(key, trigramSize, angleFor[key])}</g>`;
   return `<svg class="art-flag" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="0" y="0" width="${width}" height="${height}" fill="${PALETTE.hanji}" stroke="${PALETTE.ink}" stroke-width="${height * 0.015}"/>
     ${taegeukGroup(cx, cy, r, true)}
@@ -161,8 +166,8 @@ export function taegeukgiFlag(width) {
   </svg>`;
 }
 // taegeukgiFlag 안에서 <svg> 없이 괘 조각만 필요할 때 쓰는 내부 헬퍼
-function trigramInner(key, size) {
-  const full = trigramIcon(key, size, true);
+function trigramInner(key, size, angleDeg) {
+  const full = trigramIcon(key, size, true, angleDeg);
   return full.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 }
 
