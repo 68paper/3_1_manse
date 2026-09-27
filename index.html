@@ -142,6 +142,20 @@
   .lanterns .lantern-slot { width: 22px; height: 22px; }
   .score-badge { font-family: var(--font-title); font-weight: 800; background: var(--ink); color: var(--hanji); border-radius: 8px; padding: 4px 10px; font-size: 15px; white-space: nowrap; }
 
+  .mission { background: rgba(205,189,152,.35); border-radius: 10px; padding: 6px 10px; font-size: 13px; }
+  .mission .mission-head { display: flex; align-items: center; gap: 8px; }
+  .mission .tag { font-family: var(--font-title); font-weight: 800; font-size: 12px; background: var(--tg-red); color: var(--hanji); border-radius: 6px; padding: 1px 6px; flex-shrink: 0; }
+  .mission .goal { flex: 1; font-weight: 700; }
+  .mission .goal .prog { font-weight: 400; opacity: .75; margin-left: 4px; }
+  .mission.met .tag { background: var(--tg-blue); }
+  .mission.failed .goal { text-decoration: line-through; opacity: .6; }
+  .mission .help-btn { border: 1.5px solid var(--ink); border-radius: 50%; width: 24px; height: 24px; min-height: unset; padding: 0; font-size: 13px; line-height: 1; flex-shrink: 0; }
+  .mission .star-steps { display: flex; gap: 10px; margin-top: 3px; font-size: 12px; }
+  .mission .star-steps span { opacity: .45; }
+  .mission .star-steps span.on { opacity: 1; font-weight: 700; }
+  .mission .intro { margin-top: 5px; padding-top: 5px; border-top: 1px dashed rgba(42,34,27,.3); line-height: 1.5; }
+  .mission .intro ul { margin: 3px 0 0; padding-left: 18px; opacity: .8; }
+
   .board-wrap { display: flex; justify-content: center; }
   .board { width: min(78vw, 300px); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); gap: 5px; background: var(--ink); padding: 5px; border-radius: 14px; }
   .cell { position: relative; background: var(--board-bg); border-radius: 9px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
@@ -270,6 +284,7 @@
       <div class="lanterns" id="lanterns"></div>
       <div class="score-badge" id="score-badge">0점</div>
     </div>
+    <div class="mission" id="mission" hidden></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     <div class="message" id="game-message"></div>
     <div class="pool-wrap">

@@ -141,17 +141,26 @@ export class SoloGame {
     }
   }
 
+  /**
+   * 별1 목표의 현재 진행. { type, current, target, met }
+   * noScatter는 끝날 때까지 지켜야 하므로 current = 흩어진 줄 수, target = 0.
+   */
+  goalProgress() {
+    const stars = this.level.stars || [];
+    const stats = this.g.players[0].stats;
+    const goal = this.level.goal || { type: 'score' };
+    let current, target, met;
+    if (goal.type === 'flags') { current = this.flags; target = goal.count || 1; met = current >= target; }
+    else if (goal.type === 'combo') { current = stats[goal.combo] || 0; target = goal.count || 1; met = current >= target; }
+    else if (goal.type === 'noScatter') { current = stats.scatterLines; target = 0; met = current === 0; }
+    else { current = this.score; target = stars.length ? stars[0] : 1; met = current >= target; }
+    return { type: goal.type, combo: goal.combo, current: current, target: target, met: met };
+  }
+
   /** 결과 화면용 별 계산: 별1 = 목표 달성, 별2·3 = 점수 기준(stars[1], stars[2]) */
   starsEarned() {
-    const level = this.level;
-    const stars = level.stars || [];
-    const s = { score: this.score, flags: this.flags, stats: this.g.players[0].stats };
-    const goal = level.goal || { type: 'score' };
-    let a1;
-    if (goal.type === 'flags') a1 = s.flags >= (goal.count || 1);
-    else if (goal.type === 'combo') a1 = (s.stats[goal.combo] || 0) >= (goal.count || 1);
-    else if (goal.type === 'noScatter') a1 = s.stats.scatterLines === 0;
-    else a1 = stars.length ? this.score >= stars[0] : this.score >= 1;
+    const stars = this.level.stars || [];
+    const a1 = this.goalProgress().met;
     const a2 = stars.length > 1 ? this.score >= stars[1] : false;
     const a3 = stars.length > 2 ? this.score >= stars[2] : false;
     return (a1 ? 1 : 0) + (a2 ? 1 : 0) + (a3 ? 1 : 0);

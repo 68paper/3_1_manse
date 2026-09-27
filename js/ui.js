@@ -16,6 +16,9 @@ import {
   taegeukgiFlag, taegeukIcon, trigramIcon, dieIcon, lanternIcon, pieceIcon
 } from './art.js';
 
+// 화면에 보이는 무리 이름(규칙 보기와 같은 이름). 엔진의 TYPE_NAME은 판정용 설명이다.
+const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
+
 // ------------------------------------------------------------------
 // 전역 상태
 // ------------------------------------------------------------------
@@ -27,7 +30,8 @@ const state = {
   mode: null, // 'practice' | 'daily' | 'campaign'
   returnScreen: 'title',
   settings: getSettings(),
-  dawnPending: []
+  dawnPending: [],
+  missionOpen: false // 게임 화면 미션 카드의 안내(intro · tips) 펼침
 };
 
 const PROVINCES = [
@@ -171,6 +175,7 @@ function startGame(level, mode) {
   state.mode = mode;
   state.game = new SoloGame(level, mode, {});
   state.returnScreen = mode === 'campaign' ? 'campaign-list' : 'title';
+  state.missionOpen = !!level.tutorial;
   showScreen('game');
   renderGame();
 }
@@ -197,6 +202,8 @@ function renderGame() {
 
   document.getElementById('score-badge').textContent = snap.score + '점';
   document.getElementById('game-message').textContent = snap.message;
+
+  renderMission(g, snap);
 
   // 판
   const boardEl = document.getElementById('board');
@@ -246,6 +253,48 @@ function renderGame() {
   if (snap.done) {
     setTimeout(goToDawn, 450);
   }
+}
+
+// 캠페인 미션 카드: 별1 목표의 진행 · 별 기준 · 단계 안내
+function renderMission(g, snap) {
+  const el = document.getElementById('mission');
+  if (state.mode !== 'campaign') { el.hidden = true; return; }
+  const level = state.level;
+  const p = g.goalProgress();
+  const stars = level.stars || [];
+
+  let goal, prog;
+  if (p.type === 'flags') { goal = '태극기 ' + p.target + '장 완성'; prog = p.current + '/' + p.target; }
+  else if (p.type === 'combo') { goal = COMBO_NAME[p.combo] + ' ' + p.target + '번 이루기'; prog = p.current + '/' + p.target; }
+  else if (p.type === 'noScatter') { goal = '흩어짐 없이 마치기'; prog = p.met ? '' : '흩어짐 ' + p.current + '번'; }
+  else { goal = p.target + '점 이상'; prog = p.current + '/' + p.target; }
+  // noScatter는 끝나야 달성이 확정되고, 한 번 흩어지면 실패가 확정된다.
+  const met = p.type === 'noScatter' ? (snap.done && p.met) : p.met;
+  const failed = p.type === 'noScatter' && !p.met;
+
+
+  const steps = [
+    { label: '★ 미션', on: met },
+    stars.length > 1 ? { label: '★★ ' + stars[1] + '점', on: snap.score >= stars[1] } : null,
+    stars.length > 2 ? { label: '★★★ ' + stars[2] + '점', on: snap.score >= stars[2] } : null
+  ].filter(Boolean);
+
+  const hasHelp = !!(level.intro || (level.tips && level.tips.length));
+  let html = '<div class="mission-head">' +
+    '<span class="tag">' + (met ? '달성' : '미션') + '</span>' +
+    '<span class="goal">' + goal + (prog ? '<span class="prog">' + prog + '</span>' : '') + '</span>' +
+    (hasHelp ? '<button class="help-btn" id="mission-help" aria-expanded="' + state.missionOpen + '" aria-label="단계 안내">' + (state.missionOpen ? '×' : '?') + '</button>' : '') +
+    '</div>' +
+    '<div class="star-steps">' + steps.map(function (s) { return '<span' + (s.on ? ' class="on"' : '') + '>' + s.label + '</span>'; }).join('') + '</div>';
+  if (hasHelp && state.missionOpen) {
+    html += '<div class="intro">' + (level.intro || '') +
+      (level.tips && level.tips.length ? '<ul>' + level.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' : '') +
+      '</div>';
+  }
+  el.innerHTML = html;
+  el.classList.toggle('met', met);
+  el.classList.toggle('failed', failed);
+  el.hidden = false;
 }
 
 function renderRecordSheet(parts, flagsDone) {
@@ -420,7 +469,7 @@ function goalDescription(level) {
   const stars = level.stars || [];
   let g;
   if (goal.type === 'flags') g = '목표: 태극기 ' + (goal.count || 1) + '장';
-  else if (goal.type === 'combo') g = '목표: ' + Engine.TYPE_NAME[goal.combo] + ' ' + (goal.count || 1) + '회';
+  else if (goal.type === 'combo') g = '목표: ' + COMBO_NAME[goal.combo] + ' ' + (goal.count || 1) + '회';
   else if (goal.type === 'noScatter') g = '목표: 흩어짐 없이 마치기';
   else g = '목표: 점수 ' + (stars[0] || 1) + '점 이상';
   if (stars.length >= 3) g += ' · ★' + stars[0] + ' ★★' + stars[1] + ' ★★★' + stars[2];
@@ -453,6 +502,11 @@ function wireStaticEvents() {
     if (levelBtn && !levelBtn.disabled) {
       const lv = state.levelsById[levelBtn.dataset.level];
       if (lv) startGame(lv, 'campaign');
+      return;
+    }
+    if (e.target.closest('#mission-help')) {
+      state.missionOpen = !state.missionOpen;
+      renderMission(state.game, state.game.snapshot());
       return;
     }
     const cell = e.target.closest('#board .cell');
