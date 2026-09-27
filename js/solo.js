@@ -1,0 +1,279 @@
+/*
+ * js/solo.js — 1인 모드 진행
+ * ------------------------------------------------------------------
+ * engine.js(판정 로직)를 그대로 가져다 쓰고, 여기서는:
+ *   - 레벨 데이터를 엔진 설정으로 바꿔 게임을 만들고
+ *   - 화면(ui.js)이 지금 무엇을 보여줘야 하는지 계산하고
+ *   - 화면에서 올라온 선택(주사위 놓기 · 남기기 · 감시의 눈 · 조각 · 배치불가 처리)을
+ *     엔진 함수에 그대로 전달한다.
+ *
+ * 중요: Engine.place()는 "조합 없음/교차 완성"일 때 finalizePlacement()/prepareCross()의
+ * 반환값(undefined)을 그대로 돌려준다. 그래서 성공 여부는 `=== false` 로만 판정해야 한다.
+ * (원본 v0.9.9 엔진의 특성이며, 여기서는 그 특성에 맞춰 호출부만 정확히 쓴다.)
+ */
+import { Engine } from './engine.js';
+import { buildSoloSettings, applyStartEyes, isBlockedStart, randomSeed, todaySeed, todaySeedString } from './levelSetup.js';
+
+const STORAGE_PREFIX = 'manse-eve:v1:';
+
+function storageGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    if (raw == null) return fallback;
+    return JSON.parse(raw);
+  } catch (e) { return fallback; }
+}
+function storageSet(key, value) {
+  try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value)); return true; }
+  catch (e) { return false; }
+}
+
+export const PIECE_NAME = { taegeuk: '태극', geon: '건', ri: '리', gam: '감', gon: '곤' };
+export const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
+
+/**
+ * SoloGame — 화면(ui.js)이 쓰는 얇은 래퍼.
+ * mode: 'practice' | 'daily' | 'campaign'
+ */
+export class SoloGame {
+  constructor(level, mode, opts) {
+    this.mode = mode;
+    this.level = level;
+    this.opts = opts || {};
+    this.selectedPi = null; // 화면에서 고른, 아직 놓지 않은 주사위의 풀 인덱스
+    this._buildAndStart();
+  }
+
+  _buildAndStart() {
+    const settings = buildSoloSettings(this.level, 'human');
+    const g = Engine.create(settings);
+    applyStartEyes(Engine, g, this.level.startEyes);
+    Engine.startRound(g);
+    this.g = g;
+    this.selectedPi = null;
+  }
+
+  // ---- 조회 ----
+  get board() { return this.g.players[0].board; }
+  get pool() { return this.g.pool; }
+  get night() { return this.g.round; }
+  get maxNights() { return this.g.settings.maxRounds; }
+  get placementsLeft() { return 2 - this.g.placementsThisTurn; }
+  get score() { return Engine.finalStats(this.g)[0].score; }
+  get parts() { return this.g.players[0].parts; }
+  get flags() { return Engine.flagsOf(this.g.players[0]); }
+  get pieces() { return Engine.pieceTotal(this.g.players[0]); }
+  get done() { return this.g.done; }
+  get phase() { return this.g.phase; }
+
+  /** 지금 놓을 수 있는 칸(놓을 주사위를 고르지 않았어도 배치 규칙만) */
+  validCells() { return Engine.validCells(this.board); }
+  /** 특정 주사위를 특정 칸에 놓으면 그 자리에서 흩어지는지(도움 표시용) */
+  wouldScatterAt(pi, cell) {
+    const die = this.pool[pi];
+    if (!die) return false;
+    return Engine.wouldScatter(this.board, cell, die);
+  }
+
+  /** 화면이 지금 그려야 할 상태를 한 번에 반환 */
+  snapshot() {
+    const g = this.g;
+    const base = {
+      mode: this.mode, level: this.level,
+      board: this.board, pool: this.pool,
+      night: this.night, maxNights: this.maxNights,
+      placementsLeft: this.placementsLeft,
+      score: this.score, parts: this.parts, flags: this.flags, pieces: this.pieces,
+      phase: g.phase, done: g.done,
+      selectedPi: this.selectedPi,
+      validCells: this.done ? [] : this.validCells(),
+      message: this._messageFor(g.phase)
+    };
+    if (g.phase === 'combo_order') base.comboOrderOptions = g.pending.combos.map((c, i) => ({ idx: i, line: c.line, type: c.type }));
+    if (g.phase === 'combo_keep') base.keepLine = g.pending.combo.line;
+    if (g.phase === 'combo_eye') base.eyeOptions = g.pending.eyeOptions;
+    if (g.phase === 'combo_reward') base.rewardOptions = g.pending.rewardOptions;
+    if (g.phase === 'blocked_pool') base.poolAll = g.pool;
+    if (g.phase === 'blocked_eye') base.eyeOptions = g.pending.eyeOptions;
+    return base;
+  }
+
+  _messageFor(phase) {
+    switch (phase) {
+      case 'place': return this.placementsLeft === 2 ? '이번 밤, 놓을 사람을 골라 주세요.' : '한 번 더 놓아 주세요.';
+      case 'combo_order': return '두 무리가 함께 이루어졌어요. 어느 쪽을 먼저 처리할까요?';
+      case 'combo_keep': return '무리 중 남길 한 사람을 골라 주세요.';
+      case 'combo_eye': return '밀어낼 감시의 눈을 골라 주세요.';
+      case 'combo_reward': return '받을 조각을 골라 주세요.';
+      case 'blocked_pool': return '이번엔 놓을 곳이 없어요. 돌려보낼 사람을 골라 주세요.';
+      case 'blocked_eye': return '치울 감시의 눈을 골라 주세요.';
+      case 'end': return '여덟 번째 등잔이 꺼졌습니다.';
+      default: return '';
+    }
+  }
+
+  // ---- 행동 ----
+  selectDie(pi) {
+    if (this.g.phase !== 'place') return false;
+    this.selectedPi = (this.selectedPi === pi) ? null : pi;
+    return true;
+  }
+  placeAt(cell) {
+    if (this.g.phase !== 'place' || this.selectedPi == null) return false;
+    const pi = this.selectedPi;
+    this.selectedPi = null;
+    const result = Engine.place(this.g, pi, cell);
+    this._checkEnd();
+    return result !== false;
+  }
+  chooseComboOrder(idx) { const r = Engine.chooseComboOrder(this.g, idx); this._checkEnd(); return r; }
+  chooseKeep(cell) { const r = Engine.chooseKeep(this.g, cell); this._checkEnd(); return r; }
+  chooseEye(cell) { const r = Engine.chooseComboEye(this.g, cell); this._checkEnd(); return r; }
+  chooseReward(key) { const r = Engine.chooseReward(this.g, key); this._checkEnd(); return r; }
+  resolveBlockedPool(pi) { const r = Engine.resolveBlockedPool(this.g, pi); this._checkEnd(); return r; }
+  removeBlockedEye(cell) { const r = Engine.removeBlockedEye(this.g, cell); this._checkEnd(); return r; }
+
+  _checkEnd() {
+    if (this.g.done && this.mode === 'daily' && !this._dailySaved) {
+      this._dailySaved = true;
+      saveDailyResultIfFirst(this.level.seed, this.score, this.flags);
+      bumpStreak();
+    }
+  }
+
+  /** 결과 화면용 별 계산: 별1 = 목표 달성, 별2·3 = 점수 기준(stars[1], stars[2]) */
+  starsEarned() {
+    const level = this.level;
+    const stars = level.stars || [];
+    const s = { score: this.score, flags: this.flags, stats: this.g.players[0].stats };
+    const goal = level.goal || { type: 'score' };
+    let a1;
+    if (goal.type === 'flags') a1 = s.flags >= (goal.count || 1);
+    else if (goal.type === 'combo') a1 = (s.stats[goal.combo] || 0) >= (goal.count || 1);
+    else if (goal.type === 'noScatter') a1 = s.stats.scatterLines === 0;
+    else a1 = stars.length ? this.score >= stars[0] : this.score >= 1;
+    const a2 = stars.length > 1 ? this.score >= stars[1] : false;
+    const a3 = stars.length > 2 ? this.score >= stars[2] : false;
+    return (a1 ? 1 : 0) + (a2 ? 1 : 0) + (a3 ? 1 : 0);
+  }
+}
+
+// ---------------------------------------------------------------------
+// 모드별 레벨 만들기
+// ---------------------------------------------------------------------
+
+/** 자유 연습: 매번 새 무작위 시드, 기본 조건(풀4 · 여덟 밤) */
+export function makePracticeLevel() {
+  return {
+    id: 'practice', region: '자유 연습', title: '자유 연습',
+    nights: 8, poolSize: 4, seed: randomSeed(),
+    eyeChance: null, startEyes: [], scriptedPools: null,
+    goal: { type: 'score' }, stars: null
+  };
+}
+
+/** 오늘의 밤: KST 날짜 해시 시드, 기본 조건 고정 */
+export function makeDailyLevel(date) {
+  return {
+    id: 'daily-' + todaySeedString(date), region: '오늘의 밤', title: '오늘의 밤',
+    nights: 8, poolSize: 4, seed: todaySeed(date),
+    eyeChance: null, startEyes: [], scriptedPools: null,
+    goal: { type: 'score' }, stars: null
+  };
+}
+
+// ---------------------------------------------------------------------
+// 저장(localStorage) — 모든 읽기/쓰기 try/catch, 키 접두사 manse-eve:v1:
+// ---------------------------------------------------------------------
+
+export function requestPersistentStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  } catch (e) { /* 무시 */ }
+}
+
+export function getSettings() {
+  return storageGet('settings', { hints: true });
+}
+export function setSettings(patch) {
+  const cur = getSettings();
+  return storageSet('settings', Object.assign({}, cur, patch));
+}
+
+export function getCampaignProgress() {
+  // { [levelId]: { stars: 0-3, bestScore: n } }
+  return storageGet('campaign', {});
+}
+export function saveCampaignResult(levelId, stars, score) {
+  const prog = getCampaignProgress();
+  const cur = prog[levelId] || { stars: 0, bestScore: 0 };
+  prog[levelId] = { stars: Math.max(cur.stars, stars), bestScore: Math.max(cur.bestScore, score) };
+  storageSet('campaign', prog);
+  return prog[levelId];
+}
+export function isLevelUnlocked(levels, levelId) {
+  const idx = levels.findIndex(function (l) { return l.id === levelId; });
+  if (idx <= 0) return true;
+  const prog = getCampaignProgress();
+  const prevId = levels[idx - 1].id;
+  return !!(prog[prevId] && prog[prevId].stars >= 1);
+}
+
+function getDaily() {
+  return storageGet('daily', {}); // { [seedDateStr]: {score, flags} }
+}
+function saveDailyResultIfFirst(seed, score, flags) {
+  const dateKey = todaySeedString();
+  const daily = getDaily();
+  if (daily[dateKey] != null) return false; // 이미 기록됨(다시 하면 연습)
+  daily[dateKey] = { score: score, flags: flags, ts: Date.now() };
+  storageSet('daily', daily);
+  return true;
+}
+export function getTodayResult() {
+  const dateKey = todaySeedString();
+  const daily = getDaily();
+  return daily[dateKey] || null;
+}
+
+function bumpStreak() {
+  const dateKey = todaySeedString();
+  const s = storageGet('streak', { count: 0, lastDate: null });
+  if (s.lastDate === dateKey) return; // 이미 오늘 기록됨
+  const prevDate = s.lastDate ? new Date(s.lastDate + 'T00:00:00Z') : null;
+  const today = new Date(dateKey + 'T00:00:00Z');
+  const isConsecutive = prevDate && (today - prevDate === 24 * 60 * 60 * 1000);
+  const count = isConsecutive ? s.count + 1 : 1;
+  storageSet('streak', { count: count, lastDate: dateKey });
+}
+export function getStreak() {
+  return storageGet('streak', { count: 0, lastDate: null }).count;
+}
+
+/** 오늘의 밤 공유 문장. 태극기별 다섯 칸(태극·건·리·감·곤) 도장 여부를 ⬛/⬜로 표시 */
+export function shareText(game) {
+  const p = game.g.players[0];
+  const flagsDone = Engine.flagsOf(p);
+  const maxFlags = Math.max(1, flagsDone + (Math.min(p.parts.taegeuk, p.parts.geon, p.parts.ri, p.parts.gam, p.parts.gon) >= flagsDone ? 1 : 0));
+  const rows = [];
+  const counts = Object.assign({}, p.parts);
+  let rowIdx = 0;
+  while (rowIdx < flagsDone || (rowIdx === flagsDone && PIECE_ORDER.some(function (k) { return counts[k] > 0; }))) {
+    const row = PIECE_ORDER.map(function (k) {
+      if (counts[k] > 0) { counts[k]--; return '⬛'; }
+      return '⬜';
+    });
+    rows.push(row.join(''));
+    rowIdx++;
+    if (rowIdx >= flagsDone && !PIECE_ORDER.some(function (k) { return counts[k] > 0; })) break;
+    if (rowIdx > 6) break; // 안전장치
+  }
+  const overflow = Math.max.apply(null, PIECE_ORDER.map(function (k) { return counts[k]; }).concat([0]));
+  const lines = [
+    '3·1 만세 전야 · 오늘의 밤 ' + todaySeedString(),
+    game.score + '점 · 태극기 ' + flagsDone + '장',
+    rows.join('\n')
+  ];
+  if (overflow > 0) lines.push('+넘친 조각 ' + PIECE_ORDER.reduce(function (s, k) { return s + counts[k]; }, 0));
+  return lines.join('\n');
+}

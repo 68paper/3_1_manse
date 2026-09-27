@@ -1,0 +1,18 @@
+{
+  "name": "3·1 만세 전야 · 홀로 하는 밤",
+  "short_name": "만세 전야",
+  "description": "『3·1 만세 전야』 규칙을 그대로 쓰는 혼자 하는 짧은 밤의 퍼즐",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#efe6d2",
+  "theme_color": "#2a221b",
+  "lang": "ko",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

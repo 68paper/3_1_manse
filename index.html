@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2a221b">
+<title>3·1 만세 전야 · 홀로 하는 밤</title>
+<meta name="description" content="『3·1 만세 전야』 규칙을 그대로 쓰는 혼자 하는 짧은 퍼즐">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&family=Gowun+Dodum&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --hanji: #efe6d2;
+    --ink: #2a221b;
+    --board-bg: #cdbd98;
+    --sky-night: #141a2b;
+    --sky-dusk1: #50536c;
+    --sky-dusk2: #b98763;
+    --sky-dawn1: #ebb866;
+    --sky-dawn2: #f8ecd2;
+    --tg-red: #c8312f;
+    --tg-blue: #1f4e9a;
+    --die-black: #1e1e1e;
+    --die-white: #f7f5ef;
+    --die-red: #b8322c;
+    --die-blue: #2c4f8f;
+    --font-title: 'Nanum Myeongjo', 'Batang', 'Nanum Myeongjo Eco', serif;
+    --font-body: 'Gowun Dodum', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--hanji);
+    color: var(--ink);
+    font-family: var(--font-body);
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app {
+    max-width: 430px;
+    min-width: 320px;
+    margin: 0 auto;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow-x: hidden;
+  }
+  .screen { display: none; flex-direction: column; min-height: 100%; padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px)); animation: fadein .18s ease; }
+  .screen.active { display: flex; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+  h1, h2, h3 { font-family: var(--font-title); margin: 0 0 8px; }
+  p { line-height: 1.55; }
+  button {
+    font-family: var(--font-body);
+    border: 2px solid var(--ink);
+    background: var(--hanji);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 16px;
+    min-height: 44px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--ink); color: var(--hanji); }
+  button.ghost { background: transparent; }
+  button:disabled { opacity: .4; cursor: default; }
+  .btn-back {
+    align-self: flex-start;
+    border: none;
+    background: none;
+    font-size: 22px;
+    padding: 6px 10px 6px 0;
+    min-height: 40px;
+    min-width: 44px;
+  }
+  .topbar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .topbar .title { font-family: var(--font-title); font-size: 18px; font-weight: 700; }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; gap: 10px; }
+  .grow { flex: 1; }
+  .muted { opacity: .7; font-size: 14px; }
+  .center { text-align: center; }
+  .spacer { flex: 1; }
+  hr.sep { border: none; border-top: 1px dashed var(--ink); opacity: .3; margin: 14px 0; }
+
+  /* ---------- 타이틀 ---------- */
+  #screen-title { justify-content: center; align-items: center; text-align: center; gap: 14px; }
+  #title-flag { width: min(58vw, 220px); filter: drop-shadow(0 3px 0 rgba(0,0,0,.15)); }
+  #screen-title h1 { font-size: 26px; }
+  #screen-title .sub { font-size: 14px; opacity: .75; margin-top: -8px; }
+  #screen-title .menu { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+
+  /* ---------- 팔도 캠페인 지도 ---------- */
+  .province-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .province-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 8px; gap: 4px; }
+  .province-btn .name { font-family: var(--font-title); font-weight: 700; }
+  .province-btn .status { font-size: 12px; opacity: .7; }
+  .province-btn:disabled { background: var(--board-bg); }
+
+  /* ---------- 단계 목록 ---------- */
+  #campaign-level-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .level-row { display: flex; align-items: center; gap: 10px; text-align: left; }
+  .level-row .num { font-family: var(--font-title); font-weight: 800; font-size: 15px; width: 26px; }
+  .level-row .info { flex: 1; }
+  .level-row .info .t { font-weight: 700; }
+  .level-row .info .m { font-size: 12px; opacity: .65; }
+  .level-row .stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; }
+  .level-row.locked { opacity: .45; }
+
+  /* ---------- 규칙 보기 ---------- */
+  .rules-block { margin-bottom: 14px; }
+  .combo-example { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .combo-example .dice { display: flex; gap: 4px; }
+
+  /* ---------- 설정 ---------- */
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(42,34,27,.15); }
+  .switch { position: relative; width: 46px; height: 26px; }
+  .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
+  .switch .track { position: absolute; inset: 0; background: var(--board-bg); border: 2px solid var(--ink); border-radius: 14px; }
+  .switch .knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); transition: left .15s; }
+  .switch input:checked ~ .track { background: var(--tg-red); }
+  .switch input:checked ~ .track ~ .knob { left: 22px; background: var(--hanji); }
+
+  /* ---------- 게임 화면 ---------- */
+  #screen-game { padding-left: 10px; padding-right: 10px; gap: 8px; }
+  .game-topbar { display: flex; align-items: center; gap: 6px; }
+  .game-topbar .btn-back { flex-shrink: 0; }
+  .lanterns { display: flex; gap: 3px; flex: 1; justify-content: center; }
+  .lanterns .lantern-slot { width: 22px; height: 22px; }
+  .score-badge { font-family: var(--font-title); font-weight: 800; background: var(--ink); color: var(--hanji); border-radius: 8px; padding: 4px 10px; font-size: 15px; white-space: nowrap; }
+
+  .board-wrap { display: flex; justify-content: center; }
+  .board { width: min(78vw, 300px); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); gap: 5px; background: var(--ink); padding: 5px; border-radius: 14px; }
+  .cell { position: relative; background: var(--board-bg); border-radius: 9px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .cell::before { /* 방석 느낌 */ content: ''; position: absolute; inset: 4px; border: 1.5px dashed rgba(42,34,27,.25); border-radius: 6px; pointer-events: none; }
+  .cell.valid { outline: 3px solid var(--tg-red); outline-offset: -3px; }
+  .cell.choosable { outline: 3px solid var(--tg-blue); outline-offset: -3px; cursor: pointer; }
+  .cell.scatter-warn { outline: 3px solid #b8322c; outline-offset: -3px; box-shadow: inset 0 0 0 999px rgba(184,50,44,.18); }
+  .cell .art-die { width: 82%; height: 82%; }
+  .cell.pulse { animation: pulseKeep .5s ease; }
+  @keyframes pulseKeep { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+  .message { font-size: 14px; min-height: 20px; text-align: center; padding: 2px 6px; }
+
+  .pool-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pool { display: flex; gap: 8px; justify-content: center; }
+  .pool .die-btn { border: none; background: none; padding: 0; border-radius: 10px; min-height: unset; width: 58px; height: 58px; transition: transform .1s; }
+  .pool .die-btn.selected { transform: translateY(-8px); }
+  .pool .die-btn.selected .art-die rect:first-of-type { stroke: var(--tg-red); }
+  .pool .die-btn:disabled { opacity: .35; }
+  .placements-left { font-size: 13px; opacity: .75; }
+
+  .record-sheet { display: flex; flex-direction: column; gap: 4px; background: rgba(205,189,152,.35); border-radius: 10px; padding: 6px 8px; }
+  .record-row { display: flex; align-items: center; gap: 6px; }
+  .record-row .icons { display: flex; gap: 3px; }
+  .record-row .icons > * { width: 26px; height: 26px; }
+  .record-row .flag-num { font-size: 11px; opacity: .6; width: 14px; }
+  .overflow-row { font-size: 12px; opacity: .8; padding-top: 2px; }
+
+  .overlay-panel { position: fixed; left: 0; right: 0; bottom: 0; max-width: 430px; margin: 0 auto; background: var(--hanji); border-top: 2px solid var(--ink); border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom,0px)); box-shadow: 0 -6px 20px rgba(0,0,0,.15); z-index: 20; animation: slideup .18s ease; }
+  @keyframes slideup { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .overlay-panel .opt-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; }
+  .overlay-panel .opt-row button.piece-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 62px; padding: 8px 4px; }
+  .overlay-panel .opt-row button.piece-btn .ic { width: 28px; height: 28px; }
+
+  /* ---------- 새벽(결과) ---------- */
+  #screen-dawn { padding-left: 14px; padding-right: 14px; }
+  #dawn-sky { height: 130px; border-radius: 12px; margin: -2px 0 12px; transition: background 1.6s ease; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; }
+  #dawn-sky .dawn-caption { color: #fff; font-family: var(--font-title); font-size: 15px; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  #dawn-paint-area { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 10px 0; }
+  #dawn-paint-area button.paint-btn { padding: 6px; border-radius: 50%; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; }
+  #dawn-paint-area button.paint-btn .art-taegeuk { width: 100%; height: 100%; }
+  #dawn-paint-area button.paint-btn.painted { border-color: transparent; cursor: default; }
+  #dawn-result .score-line { font-family: var(--font-title); font-size: 22px; font-weight: 800; text-align: center; }
+  #dawn-result .stars-line { text-align: center; font-size: 26px; letter-spacing: 4px; margin: 4px 0 10px; }
+  #dawn-result .goal-line { text-align: center; font-size: 14px; opacity: .75; margin-bottom: 10px; }
+  #dawn-result .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  #dawn-result .actions .row { gap: 8px; }
+  #share-text-box { font-size: 12px; white-space: pre-wrap; background: rgba(205,189,152,.35); border-radius: 8px; padding: 8px; margin: 8px 0; text-align: center; line-height: 1.5; }
+
+  .fx-stamp, .fx-scatter { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; }
+  .fx-stamp.show { animation: fxStamp .5s ease; }
+  .fx-scatter.show { animation: fxScatter .5s ease; }
+  @keyframes fxStamp { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; transform: scale(1.15); } 100% { opacity: 0; transform: scale(1.3); } }
+  @keyframes fxScatter { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(1.6); } }
+
+  .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--ink); color: var(--hanji); padding: 8px 14px; border-radius: 20px; font-size: 13px; z-index: 50; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- 타이틀 -->
+  <section class="screen" id="screen-title" data-screen="title">
+    <div id="title-flag"></div>
+    <h1>3·1 만세 전야</h1>
+    <div class="sub">홀로 하는 밤 · 퍼즐</div>
+    <div class="menu">
+      <button class="primary" data-nav="daily">오늘의 밤</button>
+      <button data-nav="campaign-map">팔도 캠페인</button>
+      <button data-nav="practice-start">자유 연습</button>
+      <button data-nav="rules">규칙 보기</button>
+      <button class="ghost" data-nav="settings">설정</button>
+    </div>
+  </section>
+
+  <!-- 오늘의 밤 안내 -->
+  <section class="screen" id="screen-daily" data-screen="daily">
+    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">오늘의 밤</div></div>
+    <div class="stack" style="margin-top:10px;">
+      <p id="daily-date-line" class="center"></p>
+      <p id="daily-status" class="center muted"></p>
+      <p id="daily-streak" class="center muted"></p>
+      <button class="primary" id="btn-daily-start">시작하기</button>
+    </div>
+  </section>
+
+  <!-- 팔도 캠페인 지도 -->
+  <section class="screen" id="screen-campaign-map" data-screen="campaign-map">
+    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">팔도 캠페인</div></div>
+    <p class="muted">지역을 골라 주세요. 경기도부터 열려 있어요.</p>
+    <div class="province-grid" id="province-grid"></div>
+  </section>
+
+  <!-- 단계 목록 -->
+  <section class="screen" id="screen-campaign-list" data-screen="campaign-list">
+    <div class="topbar"><button class="btn-back" data-nav="campaign-map">←</button><div class="title" id="campaign-list-title">경기도</div></div>
+    <div id="campaign-level-list"></div>
+  </section>
+
+  <!-- 규칙 보기 -->
+  <section class="screen" id="screen-rules" data-screen="rules">
+    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">규칙 보기</div></div>
+    <div id="rules-content" class="stack"></div>
+  </section>
+
+  <!-- 설정 -->
+  <section class="screen" id="screen-settings" data-screen="settings">
+    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">설정</div></div>
+    <div class="setting-row">
+      <div>
+        <div>도움 표시</div>
+        <div class="muted" style="font-size:12px;">놓으면 흩어지는 칸을 빨간 테두리로 보여줘요</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="toggle-hints"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <p class="muted" style="margin-top:16px;">오늘의 밤은 도움 표시가 항상 꺼져 있어요.</p>
+    <div class="spacer"></div>
+    <p class="muted center" style="font-size:12px;">3·1 만세 전야 · 모바일 1인 퍼즐 테스트판</p>
+  </section>
+
+  <!-- 게임 -->
+  <section class="screen" id="screen-game" data-screen="game">
+    <div class="game-topbar">
+      <button class="btn-back" id="btn-game-exit">←</button>
+      <div class="lanterns" id="lanterns"></div>
+      <div class="score-badge" id="score-badge">0점</div>
+    </div>
+    <div class="board-wrap"><div class="board" id="board"></div></div>
+    <div class="message" id="game-message"></div>
+    <div class="pool-wrap">
+      <div class="pool" id="pool"></div>
+      <div class="placements-left" id="placements-left"></div>
+    </div>
+    <div class="record-sheet" id="record-sheet"></div>
+  </section>
+
+  <!-- 새벽 결과 -->
+  <section class="screen" id="screen-dawn" data-screen="dawn">
+    <div id="dawn-sky"><div class="dawn-caption" id="dawn-caption">여덟 번째 등잔이 꺼졌습니다.</div></div>
+    <div id="dawn-paint-area"></div>
+    <div class="center" style="margin-bottom:10px;">
+      <button class="ghost" id="dawn-skip">건너뛰기</button>
+    </div>
+    <div id="dawn-result" hidden>
+      <div class="score-line" id="dawn-score-line"></div>
+      <div class="stars-line" id="dawn-stars-line"></div>
+      <div class="goal-line" id="dawn-goal-line"></div>
+      <div id="share-text-box" hidden></div>
+      <div class="actions">
+        <div class="row">
+          <button class="grow" id="btn-dawn-again">다시 하기</button>
+          <button class="grow primary" id="btn-dawn-next" hidden>다음 단계</button>
+        </div>
+        <button id="btn-dawn-share" hidden>공유 문장 복사</button>
+        <button class="ghost" id="btn-dawn-home">처음으로</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="overlay-panel" id="overlay-panel" hidden></div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script type="module" src="js/ui.js"></script>
+</body>
+</html>
