@@ -153,8 +153,17 @@
   .mission .star-steps { display: flex; gap: 10px; margin-top: 3px; font-size: 12px; }
   .mission .star-steps span { opacity: .45; }
   .mission .star-steps span.on { opacity: 1; font-weight: 700; }
-  .mission .intro { margin-top: 5px; padding-top: 5px; border-top: 1px dashed rgba(42,34,27,.3); line-height: 1.5; }
-  .mission .intro ul { margin: 3px 0 0; padding-left: 18px; opacity: .8; }
+  .mission.has-help { cursor: pointer; }
+
+  /* ---------- 미션 설명 팝업 ---------- */
+  .modal { position: fixed; inset: 0; background: rgba(20,26,43,.55); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; animation: fadein .15s ease; }
+  .modal[hidden] { display: none; }
+  .modal-card { width: 100%; max-width: 360px; max-height: 80vh; overflow-y: auto; background: var(--hanji); border: 2px solid var(--ink); border-radius: 14px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .modal-card h3 { font-size: 18px; }
+  .modal-card .modal-goal { font-size: 13px; font-weight: 700; background: rgba(205,189,152,.45); border-radius: 8px; padding: 6px 8px; }
+  .modal-card .modal-body { font-size: 14px; line-height: 1.6; }
+  .modal-card .modal-body ul { margin: 4px 0 0; padding-left: 18px; opacity: .85; }
+  .modal-card button { width: 100%; margin-top: 8px; }
 
   .board-wrap { display: flex; justify-content: center; }
   .board { width: min(78vw, 300px); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); gap: 5px; background: var(--ink); padding: 5px; border-radius: 14px; }
@@ -203,7 +212,6 @@
   #dawn-result .goal-line { text-align: center; font-size: 14px; opacity: .75; margin-bottom: 10px; }
   #dawn-result .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   #dawn-result .actions .row { gap: 8px; }
-  #share-text-box { font-size: 12px; white-space: pre-wrap; background: rgba(205,189,152,.35); border-radius: 8px; padding: 8px; margin: 8px 0; text-align: center; line-height: 1.5; }
 
   .fx-stamp, .fx-scatter { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; }
   .fx-stamp.show { animation: fxStamp .5s ease; }
@@ -224,22 +232,10 @@
     <h1>3·1 만세 전야</h1>
     <div class="sub">홀로 하는 밤 · 퍼즐</div>
     <div class="menu">
-      <button class="primary" data-nav="daily">오늘의 밤</button>
-      <button data-nav="campaign-map">팔도 캠페인</button>
+      <button class="primary" data-nav="campaign-map">팔도 캠페인</button>
       <button data-nav="practice-start">자유 연습</button>
       <button data-nav="rules">규칙 보기</button>
       <button class="ghost" data-nav="settings">설정</button>
-    </div>
-  </section>
-
-  <!-- 오늘의 밤 안내 -->
-  <section class="screen" id="screen-daily" data-screen="daily">
-    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">오늘의 밤</div></div>
-    <div class="stack" style="margin-top:10px;">
-      <p id="daily-date-line" class="center"></p>
-      <p id="daily-status" class="center muted"></p>
-      <p id="daily-streak" class="center muted"></p>
-      <button class="primary" id="btn-daily-start">시작하기</button>
     </div>
   </section>
 
@@ -272,7 +268,20 @@
       </div>
       <label class="switch"><input type="checkbox" id="toggle-hints"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <p class="muted" style="margin-top:16px;">오늘의 밤은 도움 표시가 항상 꺼져 있어요.</p>
+    <div class="setting-row">
+      <div>
+        <div>배경음</div>
+        <div class="muted" style="font-size:12px;">3/4박자의 낮고 무거운 가락</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="toggle-bgm"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div>효과음</div>
+        <div class="muted" style="font-size:12px;">놓기 · 무리 · 흩어짐마다 울리는 북소리</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="toggle-sfx"><span class="track"></span><span class="knob"></span></label>
+    </div>
     <div class="spacer"></div>
     <p class="muted center" style="font-size:12px;">3·1 만세 전야 · 모바일 1인 퍼즐 테스트판</p>
   </section>
@@ -305,19 +314,25 @@
       <div class="score-line" id="dawn-score-line"></div>
       <div class="stars-line" id="dawn-stars-line"></div>
       <div class="goal-line" id="dawn-goal-line"></div>
-      <div id="share-text-box" hidden></div>
       <div class="actions">
         <div class="row">
           <button class="grow" id="btn-dawn-again">다시 하기</button>
           <button class="grow primary" id="btn-dawn-next" hidden>다음 단계</button>
         </div>
-        <button id="btn-dawn-share" hidden>공유 문장 복사</button>
         <button class="ghost" id="btn-dawn-home">처음으로</button>
       </div>
     </div>
   </section>
 
   <div class="overlay-panel" id="overlay-panel" hidden></div>
+  <div class="modal" id="mission-modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mission-modal-title">
+      <h3 id="mission-modal-title"></h3>
+      <div class="modal-goal" id="mission-modal-goal"></div>
+      <div class="modal-body" id="mission-modal-body"></div>
+      <button class="primary" id="mission-modal-close">닫기</button>
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
 </div>
 

@@ -48,31 +48,8 @@ export function applyStartEyes(Engine, g, startEyes) {
   });
 }
 
-/** 자유 연습용: 무작위 시드 (오늘의 밤 · 캠페인과 달리 매번 새로 만듦) */
+/** 자유 연습용: 무작위 시드 (캠페인과 달리 매번 새로 만듦) */
 export function randomSeed() {
   return Math.floor(Math.random() * 4294967295) >>> 0;
 }
 
-/**
- * 오늘의 밤 시드: KST(UTC+9) 날짜 문자열 "YYYY-MM-DD"의 해시.
- * 간단한 FNV-1a 32비트 해시. README에도 같은 설명을 적어 둔다.
- */
-export function todaySeedString(date) {
-  var d = date || new Date();
-  var kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-  var y = kst.getUTCFullYear();
-  var m = String(kst.getUTCMonth() + 1).padStart(2, '0');
-  var day = String(kst.getUTCDate()).padStart(2, '0');
-  return y + '-' + m + '-' + day;
-}
-export function fnv1aSeed(str) {
-  var h = 0x811c9dc5;
-  for (var i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-export function todaySeed(date) {
-  return fnv1aSeed(todaySeedString(date));
-}

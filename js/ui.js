@@ -6,15 +6,15 @@
  */
 import {
   SoloGame, PIECE_NAME, PIECE_ORDER,
-  makePracticeLevel, makeDailyLevel,
+  makePracticeLevel,
   requestPersistentStorage, getSettings, setSettings,
-  getCampaignProgress, saveCampaignResult, isLevelUnlocked,
-  getTodayResult, getStreak, shareText
+  getCampaignProgress, saveCampaignResult, isLevelUnlocked
 } from './solo.js';
 import { Engine } from './engine.js';
 import {
   taegeukgiFlag, taegeukIcon, trigramIcon, dieIcon, lanternIcon, pieceIcon
 } from './art.js';
+import { Sound } from './audio.js';
 
 // 화면에 보이는 무리 이름(규칙 보기와 같은 이름). 엔진의 TYPE_NAME은 판정용 설명이다.
 const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
@@ -27,11 +27,10 @@ const state = {
   levelsById: {},
   game: null,
   level: null,
-  mode: null, // 'practice' | 'daily' | 'campaign'
+  mode: null, // 'practice' | 'campaign'
   returnScreen: 'title',
   settings: getSettings(),
-  dawnPending: [],
-  missionOpen: false // 게임 화면 미션 카드의 안내(intro · tips) 펼침
+  dawnPending: []
 };
 
 const PROVINCES = [
@@ -53,6 +52,7 @@ function showScreen(name) {
     el.classList.toggle('active', el.dataset.screen === name);
   });
   document.getElementById('overlay-panel').hidden = true;
+  document.getElementById('mission-modal').hidden = true;
   window.scrollTo(0, 0);
 }
 
@@ -69,26 +69,6 @@ function toast(msg) {
 // ------------------------------------------------------------------
 function renderTitleFlag() {
   document.getElementById('title-flag').innerHTML = taegeukgiFlag(240);
-}
-
-// ------------------------------------------------------------------
-// 오늘의 밤 안내
-// ------------------------------------------------------------------
-function renderDailyIntro() {
-  const dateLine = document.getElementById('daily-date-line');
-  const statusLine = document.getElementById('daily-status');
-  const streakLine = document.getElementById('daily-streak');
-  const now = new Date();
-  const kstStr = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric' }).format(now);
-  dateLine.textContent = kstStr;
-  const result = getTodayResult();
-  if (result) {
-    statusLine.textContent = '오늘은 이미 ' + result.score + '점 · 태극기 ' + result.flags + '장으로 기록했어요. 다시 하면 연습으로만 진행돼요.';
-  } else {
-    statusLine.textContent = '오늘 밤은 아직 기록 전이에요.';
-  }
-  const streak = getStreak();
-  streakLine.textContent = streak > 0 ? '연속 기록 ' + streak + '일째' : '';
 }
 
 // ------------------------------------------------------------------
@@ -152,9 +132,8 @@ function renderRules() {
       <p>점수 = 모은 조각 수 + 완성한 태극기 수. 태극·건·리·감·곤을 한 벌씩 모으면 태극기 한 장이 완성돼요. 여덟 번째 밤이 끝나면(등잔이 다 꺼지면) 그날 밤이 마무리돼요.</p>
     </div>
     <div class="rules-block">
-      <h3>세 가지 놀이 방법</h3>
-      <p><b>오늘의 밤</b> — 날짜로 정해지는 오늘만의 밤. 하루 한 번만 기록돼요.<br>
-      <b>팔도 캠페인</b> — 지역별로 이어지는 단계. 별을 모아 다음 단계를 열어요.<br>
+      <h3>두 가지 놀이 방법</h3>
+      <p><b>팔도 캠페인</b> — 지역별로 이어지는 단계. 별을 모아 다음 단계를 열어요.<br>
       <b>자유 연습</b> — 매번 새로운 밤으로 마음껏 연습해요.</p>
     </div>
   `;
@@ -165,6 +144,12 @@ function renderRules() {
 // ------------------------------------------------------------------
 function renderSettings() {
   document.getElementById('toggle-hints').checked = !!state.settings.hints;
+  document.getElementById('toggle-bgm').checked = state.settings.bgm !== false;
+  document.getElementById('toggle-sfx').checked = state.settings.sfx !== false;
+}
+
+function applySoundSettings() {
+  Sound.configure({ bgm: state.settings.bgm !== false, sfx: state.settings.sfx !== false });
 }
 
 // ------------------------------------------------------------------
@@ -175,13 +160,12 @@ function startGame(level, mode) {
   state.mode = mode;
   state.game = new SoloGame(level, mode, {});
   state.returnScreen = mode === 'campaign' ? 'campaign-list' : 'title';
-  state.missionOpen = !!level.tutorial;
   showScreen('game');
   renderGame();
 }
 
 function currentHintsEnabled() {
-  return state.mode !== 'daily' && !!state.settings.hints;
+  return !!state.settings.hints;
 }
 
 // ------------------------------------------------------------------
@@ -283,18 +267,31 @@ function renderMission(g, snap) {
   let html = '<div class="mission-head">' +
     '<span class="tag">' + (met ? '달성' : '미션') + '</span>' +
     '<span class="goal">' + goal + (prog ? '<span class="prog">' + prog + '</span>' : '') + '</span>' +
-    (hasHelp ? '<button class="help-btn" id="mission-help" aria-expanded="' + state.missionOpen + '" aria-label="단계 안내">' + (state.missionOpen ? '×' : '?') + '</button>' : '') +
+    (hasHelp ? '<button class="help-btn" id="mission-help" aria-haspopup="dialog" aria-label="미션 설명 보기">?</button>' : '') +
     '</div>' +
     '<div class="star-steps">' + steps.map(function (s) { return '<span' + (s.on ? ' class="on"' : '') + '>' + s.label + '</span>'; }).join('') + '</div>';
-  if (hasHelp && state.missionOpen) {
-    html += '<div class="intro">' + (level.intro || '') +
-      (level.tips && level.tips.length ? '<ul>' + level.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' : '') +
-      '</div>';
-  }
   el.innerHTML = html;
   el.classList.toggle('met', met);
   el.classList.toggle('failed', failed);
+  el.classList.toggle('has-help', hasHelp);
   el.hidden = false;
+}
+
+// 미션 설명 팝업: 단계 이름 · 목표 · 별 기준 · 안내(intro · tips)
+function openMissionModal() {
+  const level = state.level;
+  if (!level) return;
+  const idx = state.campaignLevels.findIndex(function (l) { return l.id === level.id; });
+  document.getElementById('mission-modal-title').textContent = (idx >= 0 ? (idx + 1) + '단계 · ' : '') + level.title;
+  document.getElementById('mission-modal-goal').textContent = goalDescription(level);
+  document.getElementById('mission-modal-body').innerHTML = (level.intro ? '<p>' + level.intro + '</p>' : '') +
+    (level.tips && level.tips.length ? '<ul>' + level.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' : '');
+  document.getElementById('mission-modal').hidden = false;
+  document.getElementById('mission-modal-close').focus();
+}
+
+function closeMissionModal() {
+  document.getElementById('mission-modal').hidden = true;
 }
 
 function renderRecordSheet(parts, flagsDone) {
@@ -324,11 +321,43 @@ function renderRecordSheet(parts, flagsDone) {
 }
 
 // ------------------------------------------------------------------
+// 게임 화면 — 효과음
+// ------------------------------------------------------------------
+// 행동 전후의 기록을 비교해 무슨 일이 일어났는지에 맞는 북 장단을 고른다.
+function soundState() {
+  const g = state.game;
+  return {
+    stats: Object.assign({}, g.g.players[0].stats),
+    pieces: g.pieces, flags: g.flags, night: g.night, done: g.done
+  };
+}
+
+function playActionSounds(before) {
+  const after = soundState();
+  const b = before.stats, a = after.stats;
+  const changed = ['placements', 'same', 'consec', 'color', 'scatterLines', 'withdrawn', 'blocked', 'eyesRemoved']
+    .some(function (k) { return a[k] !== b[k]; }) || after.pieces !== before.pieces || after.night !== before.night;
+  if (!changed) { Sound.play('select'); return; } // 남길 사람 고르기 등
+  if (a.placements > b.placements) Sound.play('place');
+  // 놓은 소리 뒤에 이어서 결과 소리를 친다.
+  const d = a.placements > b.placements ? 0.18 : 0;
+  if (after.flags > before.flags) Sound.play('flag', d);
+  else if (after.pieces > before.pieces) Sound.play('reward', d);
+  if (a.same + a.consec + a.color > b.same + b.consec + b.color) Sound.play('combo', d);
+  if (a.scatterLines > b.scatterLines) Sound.play('scatter', d);
+  if (a.withdrawn > b.withdrawn) Sound.play('withdraw', d);
+  if (a.blocked > b.blocked) Sound.play('blocked', d);
+  if (a.eyesRemoved > b.eyesRemoved) Sound.play('eye', d);
+  if (!after.done && after.night > before.night) Sound.play('night', d + 0.5);
+}
+
+// ------------------------------------------------------------------
 // 게임 화면 — 입력
 // ------------------------------------------------------------------
 function onBoardClick(cell) {
   const g = state.game;
   const snap = g.snapshot();
+  const before = soundState();
   if (snap.phase === 'place') {
     if (snap.selectedPi == null) return;
     if (snap.validCells.indexOf(cell) < 0) return;
@@ -345,16 +374,20 @@ function onBoardClick(cell) {
   } else {
     return;
   }
+  playActionSounds(before);
   renderGame();
 }
 
 function onPoolClick(pi) {
   const g = state.game;
   const snap = g.snapshot();
+  const before = soundState();
   if (snap.phase === 'place') {
     g.selectDie(pi);
+    Sound.play('select');
   } else if (snap.phase === 'blocked_pool') {
     g.resolveBlockedPool(pi);
+    playActionSounds(before);
   } else {
     return;
   }
@@ -363,11 +396,14 @@ function onPoolClick(pi) {
 
 function onOverlayClick(target) {
   const g = state.game;
+  const before = soundState();
   if (target.dataset.comboOrder != null) {
     g.chooseComboOrder(Number(target.dataset.comboOrder));
+    playActionSounds(before);
     renderGame();
   } else if (target.dataset.reward != null) {
     g.chooseReward(target.dataset.reward);
+    playActionSounds(before);
     renderGame();
   }
 }
@@ -382,9 +418,9 @@ function goToDawn() {
   if (state.mode === 'campaign') saveCampaignResult(level.id, stars, g.score);
 
   showScreen('dawn');
+  Sound.play('dawn');
   document.getElementById('dawn-result').hidden = true;
   document.getElementById('dawn-skip').hidden = false;
-  document.getElementById('share-text-box').hidden = true;
   const sky = document.getElementById('dawn-sky');
   sky.style.background = '#141a2b';
   document.getElementById('dawn-caption').textContent = '여덟 번째 등잔이 꺼졌습니다.';
@@ -411,6 +447,7 @@ function onPaintClick(target) {
   if (target.classList.contains('painted')) return;
   target.classList.add('painted');
   target.innerHTML = taegeukIcon(48, true);
+  Sound.play('reward');
   state.dawnPending = state.dawnPending.filter(function (i) { return String(i) !== idx; });
   if (state.dawnPending.length === 0) {
     setTimeout(showDawnResult, 250);
@@ -435,16 +472,6 @@ function showDawnResult() {
   } else {
     starsLineEl.hidden = true;
     goalLineEl.hidden = true;
-  }
-
-  const shareBtn = document.getElementById('btn-dawn-share');
-  const shareBox = document.getElementById('share-text-box');
-  if (state.mode === 'daily') {
-    shareBtn.hidden = false;
-    shareBox.hidden = true;
-  } else {
-    shareBtn.hidden = true;
-    shareBox.hidden = true;
   }
 
   const nextBtn = document.getElementById('btn-dawn-next');
@@ -483,9 +510,9 @@ function wireStaticEvents() {
   document.body.addEventListener('click', function (e) {
     const nav = e.target.closest('[data-nav]');
     if (nav) {
+      Sound.play('tap');
       const target = nav.dataset.nav;
       if (target === 'campaign-list') renderCampaignList();
-      if (target === 'daily') renderDailyIntro();
       if (target === 'rules') renderRules();
       if (target === 'settings') renderSettings();
       if (target === 'practice-start') { startGame(makePracticeLevel(), 'practice'); return; }
@@ -504,11 +531,8 @@ function wireStaticEvents() {
       if (lv) startGame(lv, 'campaign');
       return;
     }
-    if (e.target.closest('#mission-help')) {
-      state.missionOpen = !state.missionOpen;
-      renderMission(state.game, state.game.snapshot());
-      return;
-    }
+    if (e.target.closest('#mission.has-help')) { Sound.play('tap'); openMissionModal(); return; }
+    if (e.target.closest('#mission-modal-close') || e.target.id === 'mission-modal') { closeMissionModal(); return; }
     const cell = e.target.closest('#board .cell');
     if (cell) { onBoardClick(Number(cell.dataset.cell)); return; }
     const dieBtn = e.target.closest('#pool .die-btn');
@@ -517,10 +541,6 @@ function wireStaticEvents() {
     if (overlayBtn) { onOverlayClick(overlayBtn); return; }
     const paintBtn = e.target.closest('#dawn-paint-area .paint-btn');
     if (paintBtn) { onPaintClick(paintBtn); return; }
-  });
-
-  document.getElementById('btn-daily-start').addEventListener('click', function () {
-    startGame(makeDailyLevel(), 'daily');
   });
 
   document.getElementById('btn-game-exit').addEventListener('click', function () {
@@ -541,7 +561,6 @@ function wireStaticEvents() {
 
   document.getElementById('btn-dawn-again').addEventListener('click', function () {
     if (state.mode === 'practice') startGame(makePracticeLevel(), 'practice');
-    else if (state.mode === 'daily') startGame(makeDailyLevel(), 'daily');
     else startGame(state.level, 'campaign');
   });
 
@@ -549,19 +568,25 @@ function wireStaticEvents() {
     showScreen('title');
   });
 
-  document.getElementById('btn-dawn-share').addEventListener('click', function () {
-    const text = shareText(state.game);
-    const box = document.getElementById('share-text-box');
-    box.textContent = text;
-    box.hidden = false;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { toast('공유 문장을 복사했어요.'); }).catch(function () { });
-    }
-  });
-
   document.getElementById('toggle-hints').addEventListener('change', function (e) {
     state.settings = setSettings({ hints: e.target.checked }) || state.settings;
   });
+  document.getElementById('toggle-bgm').addEventListener('change', function (e) {
+    state.settings = setSettings({ bgm: e.target.checked }) || state.settings;
+    applySoundSettings();
+  });
+  document.getElementById('toggle-sfx').addEventListener('change', function (e) {
+    state.settings = setSettings({ sfx: e.target.checked }) || state.settings;
+    applySoundSettings();
+  });
+
+  // 자동재생 정책: 첫 터치/클릭 때 소리를 켠다. 앱이 가려지면 배경음을 멈춘다.
+  document.addEventListener('pointerdown', function () { Sound.unlock(); }, { capture: true });
+  document.addEventListener('keydown', function (e) {
+    Sound.unlock();
+    if (e.key === 'Escape') closeMissionModal();
+  }, { capture: true });
+  document.addEventListener('visibilitychange', function () { Sound.setHidden(document.hidden); });
 }
 
 async function loadLevels() {
@@ -579,11 +604,12 @@ function registerServiceWorker() {
 
 async function init() {
   requestPersistentStorage();
+  applySoundSettings();
   renderTitleFlag();
   renderProvinceGrid();
   wireStaticEvents();
   showScreen('title');
-  try { await loadLevels(); } catch (e) { /* 목록이 없어도 오늘의 밤 · 자유 연습은 동작 */ }
+  try { await loadLevels(); } catch (e) { /* 목록이 없어도 자유 연습은 동작 */ }
   registerServiceWorker();
 }
 
