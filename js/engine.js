@@ -7,10 +7,14 @@
  *
  * 딱 한 곳, startRound()만 확장했다: 원래 "8밤 고정 · 인원×2+2개 풀 · 균등 1~6"을
  * "설정 가능한 밤 수 · 풀 크기 · 감시의 눈 확률 · 고정 풀(튜토리얼)"로 바꿨다.
- * 이유와 범위는 함수 위 주석에 적어 두었다. 그 외에는 아무것도 바꾸지 않았다.
+ * 이유와 범위는 함수 위 주석에 적어 두었다.
+ *
+ * 규칙 추가(룰북 v1.0 [잠정] 「감시를 밀어낸 보너스」): 한뜻 무리로 판의 감시의 눈(1)을
+ * 밀어내면 1점. 그래서 scoreOf()에 p.pushed(밀어낸 1의 수)를 더하고, chooseComboEye()에서 센다.
+ * 감시 철수 · 배치 불가로 빠진 1에는 점수가 없다. 그 외에는 아무것도 바꾸지 않았다.
  *
  * 원본: 3_1_만세_전야_웹_테스트판_v0_9_9.html의 첫 번째 <script> (TG_ENGINE)
- * 기준 룰북: 3_1_만세_전야_룰북_v0_9_9.md
+ * 기준 룰북: docs/3·1 만세 전야 룰북_v1_0.md (v0.9.9 + 감시를 밀어낸 보너스)
  */
 
 'use strict';
@@ -94,6 +98,7 @@
       board: new Array(9).fill(null),
       parts: { taegeuk: 0, geon: 0, ri: 0, gam: 0, gon: 0 },
       score: 0, arrival: 0, firstFlagRound: null, scoreHistory: [0],
+      pushed: 0, // 한뜻으로 밀어낸 감시의 눈 수(1개당 1점)
       stats: {
         same: 0, consec: 0, color: 0, cross: 0,
         scatterLines: 0, scatterDice: 0, blocked: 0, withdrawn: 0,
@@ -104,7 +109,8 @@
   }
   function flagsOf(p) { return Math.min(p.parts.taegeuk, p.parts.geon, p.parts.ri, p.parts.gam, p.parts.gon); }
   function pieceTotal(p) { return p.parts.taegeuk + p.parts.geon + p.parts.ri + p.parts.gam + p.parts.gon; }
-  function scoreOf(p) { return pieceTotal(p) + flagsOf(p); }
+  // 점수 = 조각 + 태극기 완성 장수 + 한뜻으로 밀어낸 감시의 눈 수(룰북 v1.0 [잠정])
+  function scoreOf(p) { return pieceTotal(p) + flagsOf(p) + (p.pushed || 0); }
 
   function newBag() { var b = {}; COLORS.forEach(function (c) { b[c] = 16; }); return b; }
   function bagTotal(bag) { return COLORS.reduce(function (s, c) { return s + bag[c]; }, 0); }
@@ -437,7 +443,8 @@
     if (!p.board[cell] || p.board[cell].value !== 1) return false;
     g.bag[p.board[cell].color]++; p.board[cell] = null;
     p.stats.eyesRemoved++;
-    emit(g, 'eye_removed', { cell: cell }, '└ 감시의 눈 제거 (같은 눈 조합)');
+    p.pushed = (p.pushed || 0) + 1; // 감시를 밀어낸 보너스 1점
+    emit(g, 'eye_removed', { cell: cell }, '└ 감시의 눈 제거 (같은 눈 조합) · +1점');
     beginRewards(g);
     return true;
   }
@@ -618,7 +625,7 @@
   function startGame(settings) { var g = create(settings); startRound(g); return g; }
   function finalStats(g) {
     return g.players.map(function (p) {
-      return { id: p.id, name: p.name, score: p.score, arrival: p.arrival, parts: Object.assign({}, p.parts),
+      return { id: p.id, name: p.name, score: p.score, arrival: p.arrival, parts: Object.assign({}, p.parts), pushed: p.pushed || 0,
         pieces: pieceTotal(p), flags: flagsOf(p), firstFlagRound: p.firstFlagRound, stats: Object.assign({}, p.stats) };
     });
   }
@@ -635,7 +642,8 @@
     startGame: startGame, finalStats: finalStats, dieLabel: dieLabel, snapshotBoard: snapshotBoard,
     // 1인 모드(solo.js)가 재사용하는 보조 함수 — 기존 함수를 그대로 내보내기만 함 (로직 변경 없음)
     newBag: newBag, bagTotal: bagTotal, drawFromBag: drawFromBag, makePlayer: makePlayer,
-    isFull: isFull, hasNonEye: hasNonEye
+    isFull: isFull, hasNonEye: hasNonEye,
+    endGame: endGame // 스무하루의 밤: 종료 버튼 · 막힌 판에서 게임을 끝낼 때
   };
 
 export { Engine };

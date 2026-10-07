@@ -13,6 +13,7 @@
  */
 import { Engine } from './engine.js';
 import { buildSoloSettings, applyStartEyes, isBlockedStart, randomSeed } from './levelSetup.js';
+import { nightDate } from './story.js';
 
 const STORAGE_PREFIX = 'manse-eve:v1:';
 
@@ -33,7 +34,8 @@ export const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
 
 /**
  * SoloGame — 화면(ui.js)이 쓰는 얇은 래퍼.
- * mode: 'practice' | 'campaign'
+ * mode: 'campaign' | 'endless' (여럿이 하는 자유 연습은 multi.js의 MultiGame이 이 클래스를 확장)
+ * 판 · 조각 · 점수 등은 모두 '지금 화면에 보이는 플레이어'(this.player) 기준이다. 1인 모드에서는 항상 0번.
  */
 export class SoloGame {
   constructor(level, mode, opts) {
@@ -41,6 +43,7 @@ export class SoloGame {
     this.level = level;
     this.opts = opts || {};
     this.selectedPi = null; // 화면에서 고른, 아직 놓지 않은 주사위의 풀 인덱스
+    this.endReason = null;  // 스무하루의 밤 중도 종료 이유: 'sealed'(막힌 판) | 'quit'(종료 버튼). 21밤을 다 넘기면 null
     this._buildAndStart();
   }
 
@@ -54,15 +57,18 @@ export class SoloGame {
   }
 
   // ---- 조회 ----
-  get board() { return this.g.players[0].board; }
+  get player() { return this.g.players[0]; }
+  get playerId() { return this.player.id; }
+  get board() { return this.player.board; }
   get pool() { return this.g.pool; }
   get night() { return this.g.round; }
   get maxNights() { return this.g.settings.maxRounds; }
   get placementsLeft() { return 2 - this.g.placementsThisTurn; }
-  get score() { return Engine.finalStats(this.g)[0].score; }
-  get parts() { return this.g.players[0].parts; }
-  get flags() { return Engine.flagsOf(this.g.players[0]); }
-  get pieces() { return Engine.pieceTotal(this.g.players[0]); }
+  get score() { return Engine.scoreOf(this.player); }
+  get parts() { return this.player.parts; }
+  get flags() { return Engine.flagsOf(this.player); }
+  get pieces() { return Engine.pieceTotal(this.player); }
+  get pushed() { return this.player.pushed || 0; } // 한뜻으로 밀어낸 감시의 눈(1개당 1점)
   get done() { return this.g.done; }
   get phase() { return this.g.phase; }
 
@@ -83,7 +89,7 @@ export class SoloGame {
       board: this.board, pool: this.pool,
       night: this.night, maxNights: this.maxNights,
       placementsLeft: this.placementsLeft,
-      score: this.score, parts: this.parts, flags: this.flags, pieces: this.pieces,
+      score: this.score, parts: this.parts, flags: this.flags, pieces: this.pieces, pushed: this.pushed,
       phase: g.phase, done: g.done,
       selectedPi: this.selectedPi,
       validCells: this.done ? [] : this.validCells(),
@@ -107,7 +113,7 @@ export class SoloGame {
       case 'combo_reward': return '받을 조각을 골라 주세요.';
       case 'blocked_pool': return '이번엔 놓을 곳이 없어요. 돌려보낼 사람을 골라 주세요.';
       case 'blocked_eye': return '치울 감시의 눈을 골라 주세요.';
-      case 'end': return '여덟 번째 등잔이 꺼졌습니다.';
+      case 'end': return this.endMessage();
       default: return '';
     }
   }
@@ -123,14 +129,53 @@ export class SoloGame {
     const pi = this.selectedPi;
     this.selectedPi = null;
     const result = Engine.place(this.g, pi, cell);
+    this._checkSealed();
     return result !== false;
   }
-  chooseComboOrder(idx) { return Engine.chooseComboOrder(this.g, idx); }
-  chooseKeep(cell) { return Engine.chooseKeep(this.g, cell); }
-  chooseEye(cell) { return Engine.chooseComboEye(this.g, cell); }
-  chooseReward(key) { return Engine.chooseReward(this.g, key); }
-  resolveBlockedPool(pi) { return Engine.resolveBlockedPool(this.g, pi); }
-  removeBlockedEye(cell) { return Engine.removeBlockedEye(this.g, cell); }
+  chooseComboOrder(idx) { const r = Engine.chooseComboOrder(this.g, idx); this._checkSealed(); return r; }
+  chooseKeep(cell) { const r = Engine.chooseKeep(this.g, cell); this._checkSealed(); return r; }
+  chooseEye(cell) { const r = Engine.chooseComboEye(this.g, cell); this._checkSealed(); return r; }
+  chooseReward(key) { const r = Engine.chooseReward(this.g, key); this._checkSealed(); return r; }
+  resolveBlockedPool(pi) { const r = Engine.resolveBlockedPool(this.g, pi); this._checkSealed(); return r; }
+  removeBlockedEye(cell) { const r = Engine.removeBlockedEye(this.g, cell); this._checkSealed(); return r; }
+
+  /** 스무하루의 밤: 종료 버튼 — 지금까지의 점수로 끝낸다 */
+  quit() {
+    if (this.g.done) return false;
+    this.selectedPi = null;
+    this.endReason = 'quit';
+    Engine.endGame(this.g);
+    return true;
+  }
+
+  /** 스무하루의 밤: 판이 막혔는지(가로 · 세로 모든 줄에 감시의 눈) */
+  isSealed() {
+    const eyes = [];
+    this.board.forEach(function (d, i) { if (d && d.value === 1) eyes.push(i); });
+    return isBlockedStart(eyes);
+  }
+
+  // 무리 처리 도중(남기기 · 조각 고르기)에는 판이 잠깐 가득 찬 상태라 판단하지 않고,
+  // 한 번의 배치가 다 끝나 다음 행동을 기다릴 때만 막힌 판을 확인한다.
+  _checkSealed() {
+    if (this.mode !== 'endless' || this.g.done) return;
+    if (this.g.phase !== 'place' && this.g.phase !== 'blocked_pool') return;
+    if (this.isSealed()) {
+      this.selectedPi = null;
+      this.endReason = 'sealed';
+      Engine.endGame(this.g);
+    }
+  }
+
+  /** 스무하루의 밤을 끝까지(3월 1일 새벽까지) 버텼는지 */
+  get completed() { return this.mode === 'endless' && this.g.done && !this.endReason; }
+
+  endMessage() {
+    if (this.mode !== 'endless') return '여덟 번째 등잔이 꺼졌습니다.';
+    if (this.endReason === 'sealed') return nightDate(this.night) + ' 밤, 감시의 눈이 판을 막았습니다.';
+    if (this.endReason === 'quit') return nightDate(this.night) + ' 밤에서 멈췄습니다.';
+    return '1919년 3월 1일, 날이 밝았습니다.';
+  }
 
   /**
    * 별1 목표의 현재 진행. { type, current, target, met }
@@ -138,7 +183,7 @@ export class SoloGame {
    */
   goalProgress() {
     const stars = this.level.stars || [];
-    const stats = this.g.players[0].stats;
+    const stats = this.player.stats;
     const goal = this.level.goal || { type: 'score' };
     let current, target, met;
     if (goal.type === 'flags') { current = this.flags; target = goal.count || 1; met = current >= target; }
@@ -162,11 +207,24 @@ export class SoloGame {
 // 모드별 레벨 만들기
 // ---------------------------------------------------------------------
 
-/** 자유 연습: 매번 새 무작위 시드, 기본 조건(풀4 · 여덟 밤) */
+/** 자유 연습: 매번 새 무작위 시드, 여덟 밤. 풀 크기는 MultiGame이 인원×2+2(원본 규칙)로 정한다 */
 export function makePracticeLevel() {
   return {
     id: 'practice', region: '자유 연습', title: '자유 연습',
-    nights: 8, poolSize: 4, seed: randomSeed(),
+    nights: 8, poolSize: null, seed: randomSeed(),
+    eyeChance: null, startEyes: [], scriptedPools: null,
+    goal: { type: 'score' }, stars: null
+  };
+}
+
+/**
+ * 스무하루의 밤: 1919년 2월 8일 ~ 2월 28일, 21밤. 밤마다 그 무렵의 이야기 카드(js/story.js)가 나온다.
+ * 21밤을 넘기면 3월 1일 새벽. 그 전에 판이 막히거나 종료 버튼을 누르면 그때까지의 점수로 끝.
+ */
+export function makeEndlessLevel() {
+  return {
+    id: 'endless', region: '스무하루의 밤', title: '스무하루의 밤',
+    nights: 21, poolSize: 4, seed: randomSeed(),
     eyeChance: null, startEyes: [], scriptedPools: null,
     goal: { type: 'score' }, stars: null
   };
@@ -192,6 +250,33 @@ export function setSettings(patch) {
   return next;
 }
 
+// 자유 연습 자리 구성: { count: 3~5, seats: [{ type: 'human'|'ai', name }] } — 다음에 열면 그대로 복원
+const DEFAULT_PRACTICE_SETUP = {
+  count: 3,
+  seats: [
+    { type: 'human', name: '' }, { type: 'ai', name: '' }, { type: 'ai', name: '' },
+    { type: 'ai', name: '' }, { type: 'ai', name: '' }
+  ]
+};
+export function getPracticeSetup() {
+  const s = storageGet('practiceSetup', null);
+  if (!s || !Array.isArray(s.seats) || s.seats.length !== 5) return JSON.parse(JSON.stringify(DEFAULT_PRACTICE_SETUP));
+  return s;
+}
+export function savePracticeSetup(setup) {
+  storageSet('practiceSetup', setup);
+}
+/** 써 본 사람 이름(최근 순, 최대 12개) — 이름 입력칸의 추천 목록 */
+export function getSavedNames() {
+  return storageGet('savedNames', []);
+}
+export function addSavedNames(names) {
+  const cur = getSavedNames();
+  const next = names.concat(cur.filter(function (n) { return names.indexOf(n) < 0; })).slice(0, 12);
+  storageSet('savedNames', next);
+  return next;
+}
+
 export function getCampaignProgress() {
   // { [levelId]: { stars: 0-3, bestScore: n } }
   return storageGet('campaign', {});
@@ -209,4 +294,17 @@ export function isLevelUnlocked(levels, levelId) {
   const prog = getCampaignProgress();
   const prevId = levels[idx - 1].id;
   return !!(prog[prevId] && prog[prevId].stars >= 1);
+}
+
+/** 스무하루의 밤 기록. { score, nights } 최고 점수 하나만 보관 (밤 제한이 없던 시절 기록 'endless'와 구분) */
+export function getEndlessBest() {
+  return storageGet('endless21', null);
+}
+/** 결과를 기록하고 { best, isNew }를 돌려준다(같은 점수면 더 오래 버틴 쪽) */
+export function saveEndlessResult(score, nights) {
+  const cur = getEndlessBest();
+  const isNew = !cur || score > cur.score || (score === cur.score && nights > cur.nights);
+  const best = isNew ? { score: score, nights: nights } : cur;
+  if (isNew) storageSet('endless21', best);
+  return { best: best, isNew: isNew };
 }

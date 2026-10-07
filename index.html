@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2a221b">
-<title>3·1 만세 전야 · 홀로 하는 밤</title>
+<title>3·1 만세 전야</title>
 <meta name="description" content="『3·1 만세 전야』 규칙을 그대로 쓰는 혼자 하는 짧은 퍼즐">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
@@ -35,6 +35,7 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html { scroll-padding-top: env(safe-area-inset-top, 0px); }
   html, body {
     height: 100%;
@@ -100,7 +101,7 @@
   #screen-title { justify-content: center; align-items: center; text-align: center; gap: 14px; }
   #title-flag { width: min(58vw, 220px); filter: drop-shadow(0 3px 0 rgba(0,0,0,.15)); }
   #screen-title h1 { font-size: 26px; }
-  #screen-title .sub { font-size: 14px; opacity: .75; margin-top: -8px; }
+  #screen-title .maker { font-size: 12px; opacity: .6; margin: 10px 0 0; }
   #screen-title .menu { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 
   /* ---------- 팔도 캠페인 지도 ---------- */
@@ -119,6 +120,21 @@
   .level-row .info .m { font-size: 12px; opacity: .65; }
   .level-row .stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; }
   .level-row.locked { opacity: .45; }
+
+  /* ---------- 자유 연습: 자리 구성 ---------- */
+  .setup-label { font-family: var(--font-title); font-weight: 700; margin: 14px 0 6px; }
+  .seg { display: flex; border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  .seg button { flex: 1; border: none; border-radius: 0; background: transparent; padding: 10px 0; }
+  .seg button + button { border-left: 2px solid var(--ink); }
+  .seg button.on { background: var(--ink); color: var(--hanji); }
+  .seg.small { flex-shrink: 0; border-width: 1.5px; border-radius: 8px; }
+  .seg.small button { flex: none; padding: 6px 10px; min-height: 36px; font-size: 14px; }
+  .seg.small button + button { border-left-width: 1.5px; }
+  .seat-row { display: flex; align-items: center; gap: 8px; }
+  .seat-no { font-family: var(--font-title); font-weight: 800; width: 16px; text-align: center; }
+  .seat-name { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 8px 10px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fffaf0; color: var(--ink); }
+  .seat-ai { flex: 1; opacity: .65; padding-left: 4px; }
+  #btn-practice-start { margin-top: 6px; }
 
   /* ---------- 규칙 보기 ---------- */
   .rules-block { margin-bottom: 14px; }
@@ -140,6 +156,55 @@
   .game-topbar .btn-back { flex-shrink: 0; }
   .lanterns { display: flex; gap: 3px; flex: 1; justify-content: center; }
   .lanterns .lantern-slot { width: 22px; height: 22px; }
+  .lanterns .night-count { font-family: var(--font-title); font-weight: 800; font-size: 15px; align-self: center; margin-left: 4px; border: none; background: none; padding: 2px 4px; min-height: unset; text-decoration: underline dotted; text-underline-offset: 4px; }
+  .lanterns .night-count .n { font-family: var(--font-body); font-weight: 400; font-size: 12px; opacity: .65; margin-left: 2px; }
+  .quit-btn { flex-shrink: 0; min-height: 32px; padding: 4px 10px; font-size: 14px; border-width: 1.5px; }
+  .quit-btn[hidden], .btn-back[hidden] { display: none; }
+  /* 자유 연습: 점수판 「3월 1일로 가는 길」 */
+  .score-track[hidden] { display: none; }
+  .trk-title { font-family: var(--font-title); font-weight: 800; font-size: 13px; margin: 0 0 3px 2px; }
+  .trk { position: relative; padding-right: 9px; }
+  .tsky { position: relative; display: grid; grid-template-columns: repeat(11, 1fr); height: 18px; overflow: hidden; }
+  .tsky span { display: block; }
+  .tsky .star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #f3ead6; }
+  .tsky .sunrise { position: absolute; bottom: -9px; left: calc(100% / 11 * 5.5); width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; background: #f4c05a; box-shadow: 0 0 0 5px rgba(244,192,90,.25), 0 0 0 10px rgba(244,192,90,.12); }
+  .tbar { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; padding: 3px; background: #4a3d30; }
+  .tbar + .tsky { margin-top: 5px; }
+  .tc { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--hanji); border: 1.5px solid var(--ink); border-radius: 4px; font-size: 11px; line-height: 1; min-width: 0; }
+  .tc.start { font-size: 9px; font-weight: 700; letter-spacing: -.5px; }
+  .tc.mark { border-width: 2.5px; font-weight: 800; }
+  .tc.sun { background: #f4c05a; border-width: 2.5px; font-weight: 800; }
+  .tc.fade { border-style: dashed; color: rgba(42,34,27,.6); }
+  .tc.f17 { background: #e0d6c4; } .tc.f18 { background: #c3b9a6; } .tc.f19 { background: #a69c8b; } .tc.f20 { background: #8e8473; }
+  .tc.more { background: transparent; border: none; color: #c9bba3; font-size: 14px; }
+  .tturn { position: absolute; right: 0; top: calc(18px + 3px + (100% - 2 * 18px - 5px) / 4); height: calc(18px + 5px + (100% - 2 * 18px - 5px) / 2); width: 9px; border: 2px solid #4a3d30; border-left: none; border-radius: 0 9px 9px 0; }
+  .tpawns { position: absolute; inset: 0; pointer-events: none; }
+  .pawn { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; border: 1.5px solid var(--hanji); box-shadow: 0 1px 0 1px rgba(0,0,0,.45); color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; transition: left .2s ease, top .2s ease; }
+  .dot { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; color: #fff; font-size: 9px; font-weight: 800; flex-shrink: 0; vertical-align: middle; }
+
+  /* 자유 연습: 플레이어 줄(이번 밤 순서) */
+  .players-bar { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; align-items: center; }
+  .order-label { width: 100%; text-align: center; font-size: 11px; opacity: .6; }
+  .p-card { flex: 1 1 0; min-width: 0; max-width: 84px; display: flex; flex-direction: column; gap: 2px; padding: 3px; border: 1.5px solid rgba(42,34,27,.3); border-radius: 8px; background: rgba(205,189,152,.2); }
+  .p-card.cur { border-color: var(--tg-red); background: var(--hanji); box-shadow: 0 0 0 1.5px var(--tg-red); }
+  .p-card.done { opacity: .5; }
+  .p-head { display: flex; align-items: center; gap: 2px; font-size: 11px; min-width: 0; }
+  .p-head .dot { width: 13px; height: 13px; font-size: 8px; }
+  .p-head .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-head .ai { font-size: 8px; font-weight: 700; background: var(--tg-blue); color: var(--hanji); border-radius: 3px; padding: 0 2px; }
+  .p-head .sc { font-family: var(--font-title); font-weight: 800; }
+  .mini-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; padding: 1px; background: var(--ink); border-radius: 4px; }
+  .mini-board span { position: relative; aspect-ratio: 1; background: var(--board-bg); border-radius: 2px; overflow: hidden; container-type: inline-size; }
+  /* 작은 판의 숫자: 칸 크기에 맞춰 커지고 줄어든다 */
+  .mini-board .mn.eye svg { width: 82%; height: auto; display: block; }
+  .mini-board .mn { position: absolute; right: 0; bottom: 0; width: 66%; height: 66%; display: flex; align-items: center; justify-content: center; background: var(--hanji); color: var(--ink); border: 1px solid var(--ink); border-radius: 3px 0 2px 0; font-family: var(--font-body); font-weight: 700; line-height: 1; font-size: 10px; font-size: 64cqw; }
+  .mini-board img { display: block; width: 100%; height: 100%; }
+  .p-chip { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1.5px solid rgba(42,34,27,.35); border-radius: 14px; font-size: 13px; background: rgba(205,189,152,.25); max-width: 100%; }
+  .p-chip .nm { max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-chip .ai, .ranking .ai { font-size: 10px; font-weight: 700; background: var(--tg-blue); color: var(--hanji); border-radius: 4px; padding: 0 4px; }
+  .p-chip .sc { font-family: var(--font-title); font-weight: 800; }
+  .p-chip.cur { border-color: var(--tg-red); background: var(--hanji); box-shadow: 0 0 0 1.5px var(--tg-red); }
+  .score-badge[hidden] { display: none; }
   .score-badge { font-family: var(--font-title); font-weight: 800; background: var(--ink); color: var(--hanji); border-radius: 8px; padding: 4px 10px; font-size: 15px; white-space: nowrap; }
 
   .mission { background: rgba(205,189,152,.35); border-radius: 10px; padding: 6px 10px; font-size: 13px; }
@@ -184,7 +249,7 @@
   .message { font-size: 14px; min-height: 20px; text-align: center; padding: 2px 6px; }
 
   .pool-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .pool { display: flex; gap: 8px; justify-content: center; }
+  .pool { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   .pool .die-btn { border: none; background: none; padding: 0; border-radius: 10px; min-height: unset; width: 58px; height: 58px; transition: transform .1s; }
   .pool .die-btn.selected { transform: translateY(-8px); }
   .pool .die-btn:disabled { opacity: .35; }
@@ -197,6 +262,21 @@
   .record-row .flag-num { font-size: 11px; opacity: .6; width: 14px; }
   .overflow-row { font-size: 12px; opacity: .8; padding-top: 2px; }
 
+  /* ---------- 스무하루의 밤 이야기 패널 ---------- */
+  .story-panel { scroll-margin-top: 10px; }
+  .story-card { background: var(--hanji); border: 1.5px solid var(--ink); border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.6; }
+  .story-card.fresh { animation: storyIn .5s ease; }
+  @keyframes storyIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .story-head { display: flex; align-items: center; gap: 6px; }
+  .story-panel .period { font-size: 12px; font-weight: 700; color: var(--tg-red); }
+  .story-head .new { font-size: 11px; font-weight: 700; background: var(--tg-red); color: var(--hanji); border-radius: 6px; padding: 0 6px; }
+  .story-card h3 { font-size: 16px; margin: 2px 0 2px; }
+  .story-card p, .past-item p { margin: 6px 0; }
+  .story-past { margin-top: 8px; font-size: 13px; line-height: 1.55; }
+  .story-past summary { cursor: pointer; padding: 6px 2px; opacity: .8; }
+  .past-item { border-top: 1px dashed rgba(42,34,27,.3); padding: 6px 2px; }
+  .past-item h4 { font-family: var(--font-title); font-size: 14px; margin: 1px 0; }
+
   .overlay-panel { position: fixed; left: 0; right: 0; bottom: 0; max-width: 430px; margin: 0 auto; background: var(--hanji); border-top: 2px solid var(--ink); border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom,0px)); box-shadow: 0 -6px 20px rgba(0,0,0,.15); z-index: 20; animation: slideup .18s ease; }
   @keyframes slideup { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   .overlay-panel .opt-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; }
@@ -208,11 +288,31 @@
   #dawn-sky { height: 130px; border-radius: 12px; margin: -2px 0 12px; transition: background 1.6s ease; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; }
   #dawn-sky .dawn-caption { color: #fff; font-family: var(--font-title); font-size: 15px; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
   #dawn-paint-area { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 10px 0; }
-  #dawn-paint-area button.paint-btn { padding: 6px; border-radius: 50%; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; }
-  #dawn-paint-area button.paint-btn .art-taegeuk { width: 100%; height: 100%; }
-  #dawn-paint-area button.paint-btn.painted { border-color: transparent; cursor: default; }
+  /* 새벽: 빛바랜 태극기를 누르면 색이 들어온다 */
+  #dawn-paint-area button.paint-btn { padding: 0; border: none; background: none; border-radius: 0; min-height: unset; display: flex; filter: grayscale(1) opacity(.45); transition: filter .6s ease, transform .3s ease; box-shadow: 0 2px 0 rgba(0,0,0,.12); }
+  #dawn-paint-area button.paint-btn .art-flag { display: block; width: 120px; height: auto; }
+  #dawn-paint-area button.paint-btn.painted { filter: none; cursor: default; transform: translateY(-2px); }
   #dawn-result .score-line { font-family: var(--font-title); font-size: 22px; font-weight: 800; text-align: center; }
   #dawn-result .stars-line { text-align: center; font-size: 26px; letter-spacing: 4px; margin: 4px 0 10px; }
+  /* 자유 연습 순위표 */
+  .ranking { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .ranking li { display: grid; grid-template-columns: 22px 1fr auto 56px; grid-template-areas: "rk nm pts mb" "rk sub pts mb"; align-items: center; column-gap: 8px; padding: 8px 12px; border: 1.5px solid rgba(42,34,27,.3); border-radius: 10px; }
+  .ranking li.win { border-color: var(--tg-red); background: rgba(200,49,47,.08); }
+  .ranking .rk { grid-area: rk; font-family: var(--font-title); font-weight: 800; font-size: 18px; text-align: center; }
+  .ranking .nm { grid-area: nm; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ranking .mini-board { grid-area: mb; width: 56px; }
+  .dawn-track { margin: 0 0 12px; }
+  .dawn-flag { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .dawn-flag .art-flag { width: 150px; height: auto; box-shadow: 0 2px 0 rgba(0,0,0,.12); animation: flagRise 1s ease; }
+  .dawn-flag .cap { font-size: 13px; }
+  @keyframes flagRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  .ranking .sub { grid-area: sub; font-size: 12px; opacity: .7; }
+  .ranking .pts { grid-area: pts; font-family: var(--font-title); font-weight: 800; font-size: 18px; }
+  #dawn-result .dawn-story { background: rgba(205,189,152,.35); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; line-height: 1.6; }
+  #dawn-result .dawn-story .period { font-size: 12px; font-weight: 700; color: var(--tg-red); }
+  #dawn-result .dawn-story h3 { font-size: 17px; margin: 2px 0 4px; }
+  #dawn-result .dawn-story p { margin: 6px 0; }
+  #dawn-result .stars-line.record { font-family: var(--font-title); font-size: 18px; font-weight: 800; letter-spacing: 0; color: var(--tg-red); }
   #dawn-result .goal-line { text-align: center; font-size: 14px; opacity: .75; margin-bottom: 10px; }
   #dawn-result .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   #dawn-result .actions .row { gap: 8px; }
@@ -234,13 +334,29 @@
   <section class="screen" id="screen-title" data-screen="title">
     <div id="title-flag"></div>
     <h1>3·1 만세 전야</h1>
-    <div class="sub">홀로 하는 밤 · 퍼즐</div>
     <div class="menu">
       <button class="primary" data-nav="campaign-map">팔도 캠페인</button>
-      <button data-nav="practice-start">자유 연습</button>
+      <button data-nav="endless-start">스무하루의 밤</button>
+      <button data-nav="practice-setup">자유 연습</button>
       <button data-nav="rules">규칙 보기</button>
       <button class="ghost" data-nav="settings">설정</button>
     </div>
+    <p class="maker">만든 사람 우치</p>
+  </section>
+
+  <!-- 자유 연습: 자리 구성 -->
+  <section class="screen" id="screen-practice-setup" data-screen="practice-setup">
+    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">자유 연습</div></div>
+    <p class="muted">AI나 친구와 함께 여덟 밤을 겨뤄요.</p>
+    <div class="setup-label">인원</div>
+    <div class="seg" id="setup-count">
+      <button data-count="3">3명</button><button data-count="4">4명</button><button data-count="5">5명</button>
+    </div>
+    <div class="setup-label">자리</div>
+    <div id="setup-seats" class="stack"></div>
+    <datalist id="saved-names"></datalist>
+    <p class="muted" id="setup-hint"></p>
+    <button class="primary" id="btn-practice-start">시작하기</button>
   </section>
 
   <!-- 팔도 캠페인 지도 -->
@@ -296,7 +412,10 @@
       <button class="btn-back" id="btn-game-exit">←</button>
       <div class="lanterns" id="lanterns"></div>
       <div class="score-badge" id="score-badge">0점</div>
+      <button class="quit-btn" id="btn-game-quit" hidden>종료</button>
     </div>
+    <div class="score-track" id="score-track" hidden></div>
+    <div class="players-bar" id="players-bar" hidden></div>
     <div class="mission" id="mission" hidden></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     <div class="message" id="game-message"></div>
@@ -305,6 +424,7 @@
       <div class="placements-left" id="placements-left"></div>
     </div>
     <div class="record-sheet" id="record-sheet"></div>
+    <div class="story-panel" id="story-panel" hidden></div>
   </section>
 
   <!-- 새벽 결과 -->
@@ -318,6 +438,9 @@
       <div class="score-line" id="dawn-score-line"></div>
       <div class="stars-line" id="dawn-stars-line"></div>
       <div class="goal-line" id="dawn-goal-line"></div>
+      <div class="score-track dawn-track" id="dawn-track" hidden></div>
+      <ol class="ranking" id="dawn-ranking" hidden></ol>
+      <div class="dawn-story" id="dawn-story" hidden></div>
       <div class="actions">
         <div class="row">
           <button class="grow" id="btn-dawn-again">다시 하기</button>
@@ -329,12 +452,12 @@
   </section>
 
   <div class="overlay-panel" id="overlay-panel" hidden></div>
-  <div class="modal" id="mission-modal" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mission-modal-title">
-      <h3 id="mission-modal-title"></h3>
-      <div class="modal-goal" id="mission-modal-goal"></div>
-      <div class="modal-body" id="mission-modal-body"></div>
-      <button class="primary" id="mission-modal-close">닫기</button>
+  <div class="modal" id="info-modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-modal-title">
+      <h3 id="info-modal-title"></h3>
+      <div class="modal-goal" id="info-modal-tag"></div>
+      <div class="modal-body" id="info-modal-body"></div>
+      <button class="primary" id="info-modal-close">닫기</button>
     </div>
   </div>
   <div class="toast" id="toast"></div>
