@@ -2,7 +2,7 @@
  * sw.js — 오프라인 캐시
  * 버전(CACHE_NAME)을 올리면 이전 캐시는 activate 단계에서 정리된다.
  */
-const CACHE_NAME = 'manse-eve-v3';
+const CACHE_NAME = 'manse-eve-v4';
 const PRECACHE = [
   './',
   './index.html',
@@ -18,7 +18,12 @@ const PRECACHE = [
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
   './icons/icon-maskable-512.png'
-];
+].concat(
+  // 주사위 그림 24장: img/dice/{색}_{눈}.webp
+  ['black', 'white', 'red', 'blue'].flatMap(function (c) {
+    return [1, 2, 3, 4, 5, 6].map(function (v) { return './img/dice/' + c + '_' + v + '.webp'; });
+  })
+);
 
 self.addEventListener('install', function (event) {
   event.waitUntil(

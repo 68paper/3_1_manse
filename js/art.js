@@ -34,9 +34,6 @@ export const PALETTE = {
   dieBlue: '#2c4f8f'
 };
 
-const DIE_FACE = { black: PALETTE.dieBlack, white: PALETTE.dieWhite, red: PALETTE.dieRed, blue: PALETTE.dieBlue };
-// 각 주사위 바탕색 위에서 또렷이 보이는 눈/점 색
-const DIE_PIP = { black: PALETTE.dieWhite, white: PALETTE.ink, red: PALETTE.dieWhite, blue: PALETTE.dieWhite };
 
 const SKY_STOPS = [PALETTE.skyNight, PALETTE.skyDusk1, PALETTE.skyDusk2, PALETTE.skyDawn1, PALETTE.skyDawn2];
 
@@ -172,46 +169,20 @@ function trigramInner(key, size, angleDeg) {
 }
 
 // ------------------------------------------------------------------
-// 주사위 (16×16 격자 느낌의 각진 아이콘). value: 1(감시의 눈) ~ 6
+// 주사위 — img/dice/{색}_{눈}.webp 인물 그림(128px). value: 1(감시의 눈) ~ 6
 // ------------------------------------------------------------------
-const PIP_LAYOUTS = {
-  1: [], // eye로 별도 처리
-  2: [[1, 1], [3, 3]],
-  3: [[1, 1], [2, 2], [3, 3]],
-  4: [[1, 1], [1, 3], [3, 1], [3, 3]],
-  5: [[1, 1], [1, 3], [2, 2], [3, 1], [3, 3]],
-  6: [[1, 1], [1, 2], [1, 3], [3, 1], [3, 2], [3, 3]]
-};
-/** 주사위 아이콘. value=1이면 눈 모양, 아니면 각진 점(픽셀풍) */
+const DIE_COLOR_NAME = { black: '검정', white: '하양', red: '빨강', blue: '파랑' };
+/**
+ * 주사위 아이콘. 그림 속 숫자는 작아서, 2~6은 오른쪽 아래에 큰 숫자 표시를 덧그린다.
+ * size는 기본 크기(px)이며, 판 칸처럼 CSS가 크기를 정하는 곳에서는 CSS가 우선한다.
+ */
 export function dieIcon(color, value, size, opts) {
   opts = opts || {};
-  const face = DIE_FACE[color] || DIE_FACE.black;
-  const pip = DIE_PIP[color] || PALETTE.ink;
-  const eyeRing = value === 1;
-  const grid = 4; // 4x4 셀 좌표계(눈금 1~3 사용, 0/4는 여백)
-  const cell = size / grid;
-  const r0 = size * 0.14; // 모서리 둥글기
-  let inner;
-  if (eyeRing) {
-    // 감시의 눈: 아몬드형 눈 + 동공 (각진 픽셀풍)
-    const cx = size / 2, cy = size / 2;
-    const w = size * 0.62, h = size * 0.30;
-    inner = `
-      <path d="M ${cx - w / 2} ${cy} Q ${cx} ${cy - h} ${cx + w / 2} ${cy} Q ${cx} ${cy + h} ${cx - w / 2} ${cy} Z"
-            fill="${pip}" stroke="${pip}" stroke-width="${size * 0.02}"/>
-      <rect x="${cx - size * 0.07}" y="${cy - size * 0.07}" width="${size * 0.14}" height="${size * 0.14}" fill="${face}"/>`;
-  } else {
-    const pipSize = size * 0.15;
-    inner = (PIP_LAYOUTS[value] || []).map(([gx, gy]) => {
-      const x = gx * cell - pipSize / 2, y = gy * cell - pipSize / 2;
-      return `<rect x="${x}" y="${y}" width="${pipSize}" height="${pipSize}" fill="${pip}"/>`;
-    }).join('');
-  }
-  const sel = opts.selected ? `stroke="${PALETTE.taegeukRed}" stroke-width="${size * 0.06}"` : `stroke="${PALETTE.ink}" stroke-width="${size * 0.045}"`;
-  return `<svg class="art-die" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <rect x="${size * 0.03}" y="${size * 0.03}" width="${size * 0.94}" height="${size * 0.94}" rx="${r0}" ry="${r0}" fill="${face}" ${sel}/>
-    ${inner}
-  </svg>`;
+  const c = DIE_COLOR_NAME[color] ? color : 'black';
+  const label = DIE_COLOR_NAME[c] + ' ' + (value === 1 ? '감시의 눈' : value);
+  const num = value === 1 ? '' : `<span class="die-num" aria-hidden="true">${value}</span>`;
+  return `<span class="art-die${opts.selected ? ' selected' : ''}" style="--die:${size}px" role="img" aria-label="${label}">` +
+    `<img src="img/dice/${c}_${value}.webp" alt="" width="${size}" height="${size}" draggable="false">${num}</span>`;
 }
 
 // ------------------------------------------------------------------
