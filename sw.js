@@ -2,7 +2,7 @@
  * sw.js — 오프라인 캐시
  * 버전(CACHE_NAME)을 올리면 이전 캐시는 activate 단계에서 정리된다.
  */
-const CACHE_NAME = 'manse-eve-v13';
+const CACHE_NAME = 'manse-eve-v15';
 const PRECACHE = [
   './',
   './index.html',

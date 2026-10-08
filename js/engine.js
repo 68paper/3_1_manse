@@ -2,19 +2,19 @@
  * 『3·1 만세 전야』 판정 엔진 — v0.9.9 웹 테스트판에서 그대로 옮김
  * ------------------------------------------------------------------
  * 이 파일의 조합 판정(comboType) · 흩어짐/감시 철수(finalizePlacement) ·
- * 무리 처리(beginCombo/afterKeep/beginRewards/chooseReward) · 점수 계산(scoreOf) ·
+ * 모둠 처리(beginCombo/afterKeep/beginRewards/chooseReward) · 점수 계산(scoreOf) ·
  * 배치 가능 칸(validCells) 로직은 원본 v0.9.9와 한 글자도 다르지 않다.
  *
  * 딱 한 곳, startRound()만 확장했다: 원래 "8밤 고정 · 인원×2+2개 풀 · 균등 1~6"을
- * "설정 가능한 밤 수 · 풀 크기 · 감시의 눈 확률 · 고정 풀(튜토리얼)"로 바꿨다.
+ * "설정 가능한 밤 수 · 광장 크기 · 밀정 확률 · 고정 풀(튜토리얼)"로 바꿨다.
  * 이유와 범위는 함수 위 주석에 적어 두었다.
  *
- * 규칙 추가(룰북 v1.0 [잠정] 「감시를 밀어낸 보너스」): 한뜻 무리로 판의 감시의 눈(1)을
- * 밀어내면 1점. 그래서 scoreOf()에 p.pushed(밀어낸 1의 수)를 더하고, chooseComboEye()에서 센다.
+ * 규칙 추가(룰북 v1.1 「밀정을 쫓아냄」): 한뜻 모둠으로 판의 밀정(1)을
+ * 쫓아내면 1점. 그래서 scoreOf()에 p.pushed(쫓아낸 1의 수)를 더하고, chooseComboEye()에서 센다.
  * 감시 철수 · 배치 불가로 빠진 1에는 점수가 없다. 그 외에는 아무것도 바꾸지 않았다.
  *
  * 원본: 3_1_만세_전야_웹_테스트판_v0_9_9.html의 첫 번째 <script> (TG_ENGINE)
- * 기준 룰북: docs/3·1 만세 전야 룰북_v1_0.md (v0.9.9 + 감시를 밀어낸 보너스)
+ * 기준 룰북: docs/3·1 만세 전야 룰북_v1_1.md
  */
 
 'use strict';
@@ -72,7 +72,7 @@
     return line.some(function (i) { return board[i] && board[i].value !== 1; });
   }
   function validCells(board) {
-    // 룰북 v0.9.5: 감시의 눈(1)도 배치 기준이 된다.
+    // 룰북 v0.9.5: 밀정(1)도 배치 기준이 된다.
     // 판이 비어 있으면 아무 칸, 그 외에는 놓인 주사위(1 포함)의 상하좌우 빈칸.
     var empty = [], occupied = [];
     for (var i = 0; i < 9; i++) {
@@ -98,7 +98,7 @@
       board: new Array(9).fill(null),
       parts: { taegeuk: 0, geon: 0, ri: 0, gam: 0, gon: 0 },
       score: 0, arrival: 0, firstFlagRound: null, scoreHistory: [0],
-      pushed: 0, // 한뜻으로 밀어낸 감시의 눈 수(1개당 1점)
+      pushed: 0, // 한뜻으로 쫓아낸 밀정 수(1개당 1점)
       stats: {
         same: 0, consec: 0, color: 0, cross: 0,
         scatterLines: 0, scatterDice: 0, blocked: 0, withdrawn: 0,
@@ -109,7 +109,7 @@
   }
   function flagsOf(p) { return Math.min(p.parts.taegeuk, p.parts.geon, p.parts.ri, p.parts.gam, p.parts.gon); }
   function pieceTotal(p) { return p.parts.taegeuk + p.parts.geon + p.parts.ri + p.parts.gam + p.parts.gon; }
-  // 점수 = 조각 + 태극기 완성 장수 + 한뜻으로 밀어낸 감시의 눈 수(룰북 v1.0 [잠정])
+  // 점수 = 조각 + 태극기 완성 장수 + 한뜻으로 쫓아낸 밀정 수(룰북 v1.1)
   function scoreOf(p) { return pieceTotal(p) + flagsOf(p) + (p.pushed || 0); }
 
   function newBag() { var b = {}; COLORS.forEach(function (c) { b[c] = 16; }); return b; }
@@ -159,11 +159,11 @@
 
   // ---- 1인 모바일 확장 지점 --------------------------------------------
   // 아래부터 startRound() 끝까지는 v0.9.9 원본과 다르다. 바뀐 것은 오직
-  // "밤 수 · 풀 크기 · 풀 구성을 어디서 가져오는지"뿐이며, 조합 판정 · 흩어짐 ·
-  // 감시 철수 · 점수 계산(무리짓기 이후의 모든 로직)은 원본 그대로다.
+  // "밤 수 · 광장 크기 · 풀 구성을 어디서 가져오는지"뿐이며, 조합 판정 · 흩어짐 ·
+  // 감시 철수 · 점수 계산(모둠 이후의 모든 로직)은 원본 그대로다.
   //   g.settings.maxRounds     : 밤 수. 없으면 8 (원본과 동일)
   //   g.settings.poolSize      : 밤마다 꺼내는 주사위 수. 없으면 n*2+2 (원본과 동일)
-  //   g.settings.eyeChance     : 감시의 눈(1) 확률. null/미지정이면 균등 1/6 (원본과 동일)
+  //   g.settings.eyeChance     : 밀정(1) 확률. null/미지정이면 균등 1/6 (원본과 동일)
   //   g.settings.scriptedPools : [[[색,눈], ...], ...] 밤별 고정 풀. 있으면 그 밤은
   //                              주머니 대신 이 배열을 그대로 쓴다 (튜토리얼 전용)
   function rollValue(rng, eyeChance) {
@@ -443,8 +443,8 @@
     if (!p.board[cell] || p.board[cell].value !== 1) return false;
     g.bag[p.board[cell].color]++; p.board[cell] = null;
     p.stats.eyesRemoved++;
-    p.pushed = (p.pushed || 0) + 1; // 감시를 밀어낸 보너스 1점
-    emit(g, 'eye_removed', { cell: cell }, '└ 감시의 눈 제거 (같은 눈 조합) · +1점');
+    p.pushed = (p.pushed || 0) + 1; // 밀정을 쫓아냄 1점
+    emit(g, 'eye_removed', { cell: cell }, '└ 밀정을 쫓아냄 (한뜻) · +1점');
     beginRewards(g);
     return true;
   }
@@ -503,12 +503,12 @@
         }
       }
     });
-    // 감시 철수(룰북 v0.9.6): 감시의 눈 셋으로만 채워진 줄은 셋 모두 주머니로
+    // 감시 철수(룰북 v0.9.6): 밀정 셋으로만 채워진 줄은 셋 모두 주머니로
     linesAt(cell).forEach(function (line) {
       if (isFull(p.board, line) && line.every(function (i) { return p.board[i].value === 1; })) {
         line.forEach(function (i) { g.bag[p.board[i].color]++; p.board[i] = null; });
         p.stats.withdrawn++;
-        emit(g, 'withdraw', { line: line }, '└ 감시 철수 · 감시의 눈 3개 반환');
+        emit(g, 'withdraw', { line: line }, '└ 감시 철수 · 밀정 3개 반환');
       }
     });
     updateScore(g, p);
@@ -531,7 +531,7 @@
     var p = current(g);
     var die = g.pool.splice(pi, 1)[0];
     g.bag[die.color]++; p.stats.blocked++;
-    emit(g, 'blocked_return', { die: die }, '└ 공용 풀 ' + dieLabel(die) + ' 반환');
+    emit(g, 'blocked_return', { die: die }, '└ 광장 ' + dieLabel(die) + ' 반환');
     var eyes = [];
     for (var i = 0; i < 9; i++) if (p.board[i] && p.board[i].value === 1) eyes.push(i);
     if (eyes.length === 0) { finishBlocked(g); return; }
@@ -542,7 +542,7 @@
     var p = current(g);
     if (!p.board[cell] || p.board[cell].value !== 1) return false;
     g.bag[p.board[cell].color]++; p.board[cell] = null; p.stats.eyesRemoved++;
-    emit(g, 'blocked_eye_return', { cell: cell }, '└ 판의 감시의 눈 제거');
+    emit(g, 'blocked_eye_return', { cell: cell }, '└ 판의 밀정 제거');
     finishBlocked(g); return true;
   }
   function finishBlocked(g) { g.pending = null; g.placementsThisTurn++; advance(g); }

@@ -4,7 +4,7 @@
  * engine.js(판정 로직)를 그대로 가져다 쓰고, 여기서는:
  *   - 레벨 데이터를 엔진 설정으로 바꿔 게임을 만들고
  *   - 화면(ui.js)이 지금 무엇을 보여줘야 하는지 계산하고
- *   - 화면에서 올라온 선택(주사위 놓기 · 남기기 · 감시의 눈 · 조각 · 배치불가 처리)을
+ *   - 화면에서 올라온 선택(주사위 놓기 · 남기기 · 밀정 · 조각 · 배치불가 처리)을
  *     엔진 함수에 그대로 전달한다.
  *
  * 중요: Engine.place()는 "조합 없음/교차 완성"일 때 finalizePlacement()/prepareCross()의
@@ -68,7 +68,7 @@ export class SoloGame {
   get parts() { return this.player.parts; }
   get flags() { return Engine.flagsOf(this.player); }
   get pieces() { return Engine.pieceTotal(this.player); }
-  get pushed() { return this.player.pushed || 0; } // 한뜻으로 밀어낸 감시의 눈(1개당 1점)
+  get pushed() { return this.player.pushed || 0; } // 한뜻으로 쫓아낸 밀정(1개당 1점)
   get done() { return this.g.done; }
   get phase() { return this.g.phase; }
 
@@ -107,12 +107,12 @@ export class SoloGame {
   _messageFor(phase) {
     switch (phase) {
       case 'place': return this.placementsLeft === 2 ? '이번 밤, 놓을 사람을 골라 주세요.' : '한 번 더 놓아 주세요.';
-      case 'combo_order': return '두 무리가 함께 이루어졌어요. 어느 쪽을 먼저 처리할까요?';
-      case 'combo_keep': return '무리 중 남길 한 사람을 골라 주세요.';
-      case 'combo_eye': return '밀어낼 감시의 눈을 골라 주세요.';
+      case 'combo_order': return '두 모둠이 함께 이루어졌어요(교차 완성). 어느 쪽 보상을 먼저 받을까요?';
+      case 'combo_keep': return '모둠 중 남길 한 사람을 골라 주세요.';
+      case 'combo_eye': return '쫓아낼 밀정을 골라 주세요. (+1점)';
       case 'combo_reward': return '받을 조각을 골라 주세요.';
       case 'blocked_pool': return '이번엔 놓을 곳이 없어요. 돌려보낼 사람을 골라 주세요.';
-      case 'blocked_eye': return '치울 감시의 눈을 골라 주세요.';
+      case 'blocked_eye': return '치울 밀정을 골라 주세요.';
       case 'end': return this.endMessage();
       default: return '';
     }
@@ -148,14 +148,14 @@ export class SoloGame {
     return true;
   }
 
-  /** 스무하루의 밤: 판이 막혔는지(가로 · 세로 모든 줄에 감시의 눈) */
+  /** 스무하루의 밤: 판이 막혔는지(가로 · 세로 모든 줄에 밀정) */
   isSealed() {
     const eyes = [];
     this.board.forEach(function (d, i) { if (d && d.value === 1) eyes.push(i); });
     return isBlockedStart(eyes);
   }
 
-  // 무리 처리 도중(남기기 · 조각 고르기)에는 판이 잠깐 가득 찬 상태라 판단하지 않고,
+  // 모둠 처리 도중(남기기 · 조각 고르기)에는 판이 잠깐 가득 찬 상태라 판단하지 않고,
   // 한 번의 배치가 다 끝나 다음 행동을 기다릴 때만 막힌 판을 확인한다.
   _checkSealed() {
     if (this.mode !== 'endless' || this.g.done) return;
@@ -172,7 +172,7 @@ export class SoloGame {
 
   endMessage() {
     if (this.mode !== 'endless') return '여덟 번째 등잔이 꺼졌습니다.';
-    if (this.endReason === 'sealed') return nightDate(this.night) + ' 밤, 감시의 눈이 판을 막았습니다.';
+    if (this.endReason === 'sealed') return nightDate(this.night) + ' 밤, 밀정이 판을 막았습니다.';
     if (this.endReason === 'quit') return nightDate(this.night) + ' 밤에서 멈췄습니다.';
     return '1919년 3월 1일, 날이 밝았습니다.';
   }
@@ -261,6 +261,7 @@ const DEFAULT_PRACTICE_SETUP = {
 export function getPracticeSetup() {
   const s = storageGet('practiceSetup', null);
   if (!s || !Array.isArray(s.seats) || s.seats.length !== 5) return JSON.parse(JSON.stringify(DEFAULT_PRACTICE_SETUP));
+  if (!(s.count >= 3 && s.count <= 5)) s.count = 3;
   return s;
 }
 export function savePracticeSetup(setup) {

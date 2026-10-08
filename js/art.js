@@ -169,7 +169,7 @@ function trigramInner(key, size, angleDeg) {
 }
 
 // ------------------------------------------------------------------
-// 주사위 — img/dice/{색}_{눈}.webp 인물 그림(128px). value: 1(감시의 눈) ~ 6
+// 주사위 — img/dice/{색}_{눈}.webp 인물 그림(128px). value: 1(밀정) ~ 6
 // ------------------------------------------------------------------
 const DIE_COLOR_NAME = { black: '검정', white: '하양', red: '빨강', blue: '파랑' };
 /**
@@ -179,7 +179,7 @@ const DIE_COLOR_NAME = { black: '검정', white: '하양', red: '빨강', blue: 
 export function dieIcon(color, value, size, opts) {
   opts = opts || {};
   const c = DIE_COLOR_NAME[color] ? color : 'black';
-  const label = DIE_COLOR_NAME[c] + ' ' + (value === 1 ? '감시의 눈' : value);
+  const label = DIE_COLOR_NAME[c] + ' ' + (value === 1 ? '밀정' : value);
   const num = value === 1 ? '' : `<span class="die-num" aria-hidden="true">${value}</span>`;
   return `<span class="art-die${opts.selected ? ' selected' : ''}" style="--die:${size}px" role="img" aria-label="${label}">` +
     `<img src="img/dice/${c}_${value}.webp" alt="" width="${size}" height="${size}" draggable="false">${num}</span>`;
