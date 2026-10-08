@@ -239,6 +239,7 @@ function startGame(level, mode, seats) {
   showScreen('game');
   document.getElementById('story-panel').dataset.night = '';
   renderGame();
+  if (mode === 'campaign') openMissionModal(); // 단계 시작 때 미션 설명을 먼저 보여 준다
 }
 
 function currentHintsEnabled() {
@@ -315,10 +316,18 @@ function renderGame() {
       return '<button data-combo-order="' + o.idx + '">' + Engine.TYPE_NAME[o.type] + '</button>';
     }).join('') + '</div>';
   } else if (snap.phase === 'combo_reward') {
+    // 아래에서 올라오는 창이 기록지를 가리므로, 창 안에 지금 가진 조각을 함께 보여 준다.
+    // 가장 적게 가진 조각(다음 태극기에 필요한 칸)은 빨간 테두리로 표시. 모두 같은 수면 표시하지 않는다
+    const counts = PIECE_ORDER.map(function (k) { return snap.parts[k]; });
+    const minCount = Math.min.apply(null, counts) < Math.max.apply(null, counts) ? Math.min.apply(null, counts) : -1;
     overlay.hidden = false;
-    overlay.innerHTML = '<p>' + snap.message + '</p><div class="opt-row">' + snap.rewardOptions.map(function (key) {
-      return '<button class="piece-btn" data-reward="' + key + '"><span class="ic">' + pieceIcon(key, 28, true) + '</span>' + PIECE_NAME[key] + '</button>';
-    }).join('') + '</div>';
+    overlay.innerHTML = '<p>' + snap.message + '</p>' +
+      '<div class="ov-label">지금 가진 조각</div><div class="record-sheet">' + recordSheetHtml(snap.parts, snap.flags, snap.pushed) + '</div>' +
+      '<div class="opt-row">' + snap.rewardOptions.map(function (key) {
+        const n = snap.parts[key];
+        return '<button class="piece-btn' + (n === minCount ? ' need' : '') + '" data-reward="' + key + '"><span class="ic">' + pieceIcon(key, 28, true) + '</span>' +
+          PIECE_NAME[key] + '<span class="cnt">' + n + '개</span></button>';
+      }).join('') + '</div>';
   } else {
     overlay.hidden = true;
   }
@@ -581,7 +590,11 @@ function openMissionModal() {
 }
 
 function renderRecordSheet(parts, flagsDone, pushed) {
-  const el = document.getElementById('record-sheet');
+  document.getElementById('record-sheet').innerHTML = recordSheetHtml(parts, flagsDone, pushed);
+}
+
+// 기록지: 태극 · 건 · 리 · 감 · 곤 다섯 칸 줄을 쌓은 모양(게임 화면 · 조각 고르는 창에서 함께 씀)
+function recordSheetHtml(parts, flagsDone, pushed) {
   const counts = Object.assign({}, parts);
   const rows = [];
   let rowIdx = 0;
@@ -604,7 +617,7 @@ function renderRecordSheet(parts, flagsDone, pushed) {
   const overflow = PIECE_ORDER.reduce(function (s, k) { return s + counts[k]; }, 0);
   if (overflow > 0) html += '<div class="overflow-row">+넘친 조각 ' + overflow + '개</div>';
   if (pushed > 0) html += '<div class="overflow-row">감시를 밀어냄 ' + pushed + '번 · +' + pushed + '점</div>';
-  el.innerHTML = html;
+  return html;
 }
 
 // ------------------------------------------------------------------
