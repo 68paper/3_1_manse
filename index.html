@@ -104,12 +104,7 @@
   #screen-title .maker { font-size: 12px; opacity: .6; margin: 10px 0 0; }
   #screen-title .menu { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 
-  /* ---------- 팔도 캠페인 지도 ---------- */
-  .province-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-  .province-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 8px; gap: 4px; }
-  .province-btn .name { font-family: var(--font-title); font-weight: 700; }
-  .province-btn .status { font-size: 12px; opacity: .7; }
-  .province-btn:disabled { background: var(--board-bg); }
+  /* ---------- 게임 익히기: 단계 목록 ---------- */
 
   /* ---------- 단계 목록 ---------- */
   #campaign-level-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -340,7 +335,7 @@
     <div id="title-flag"></div>
     <h1>3·1 만세 전야</h1>
     <div class="menu">
-      <button class="primary" data-nav="campaign-map">팔도 캠페인</button>
+      <button class="primary" data-nav="campaign-list">게임 익히기</button>
       <button data-nav="endless-start">스무하루의 밤</button>
       <button data-nav="practice-setup">자유 연습</button>
       <button data-nav="rules">규칙 보기</button>
@@ -364,16 +359,9 @@
     <button class="primary" id="btn-practice-start">시작하기</button>
   </section>
 
-  <!-- 팔도 캠페인 지도 -->
-  <section class="screen" id="screen-campaign-map" data-screen="campaign-map">
-    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title">팔도 캠페인</div></div>
-    <p class="muted">지역을 골라 주세요. 경기도부터 열려 있어요.</p>
-    <div class="province-grid" id="province-grid"></div>
-  </section>
-
   <!-- 단계 목록 -->
   <section class="screen" id="screen-campaign-list" data-screen="campaign-list">
-    <div class="topbar"><button class="btn-back" data-nav="campaign-map">←</button><div class="title" id="campaign-list-title">경기도</div></div>
+    <div class="topbar"><button class="btn-back" data-nav="title">←</button><div class="title" id="campaign-list-title">게임 익히기</div></div>
     <div id="campaign-level-list"></div>
   </section>
 

@@ -41,6 +41,9 @@ let master = null, bgmBus = null, duckGain = null, sfxBus = null, drumBus = null
 let noiseBuf = null;
 let bgmEnabled = true, sfxEnabled = true;
 let bgmTimer = null, nextBarTime = 0, barIndex = 0;
+// 효과음 '목소리': play() 한 번이 만드는 소리 묶음의 출력(북 · 기타 · 잔향). 소리 함수들은 여기로 보낸다.
+let vDrum = null, vSfx = null, vHall = null;
+let voices = []; // { gains, prio, made(만든 시각), end }
 
 function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
@@ -250,11 +253,11 @@ function drumVoice(t, opts) {
   const out = ctx.createGain(); out.gain.value = 1;
   if (far > 0) {
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000 * Math.pow(0.08, far);
-    out.connect(lp); lp.connect(drumBus);
+    out.connect(lp); lp.connect(vDrum);
     const send = ctx.createGain(); send.gain.value = far * 0.9;
-    lp.connect(send); send.connect(hall);
+    lp.connect(send); send.connect(vHall);
   } else {
-    out.connect(drumBus);
+    out.connect(vDrum);
   }
 
   // 몸통(쿵)
@@ -327,7 +330,7 @@ function jing(t, gain, f, dur) {
   lfo.frequency.value = 3.5; lg.gain.value = 0.25;
   lfo.connect(lg); lg.connect(out.gain);
   lfo.start(t); lfo.stop(t + dur);
-  out.connect(sfxBus);
+  out.connect(vSfx);
 
   const partials = [[1, 1], [1.006, 0.8], [2.0, 0.35], [2.76, 0.25], [3.94, 0.12], [5.4, 0.06]];
   partials.forEach(function (p, i) {
@@ -364,7 +367,7 @@ function whistle(t, gain, dur) {
   g.gain.linearRampToValueAtTime(gain * 0.6, t + 0.01);
   g.gain.setValueAtTime(gain * 0.6, t + dur - 0.05);
   g.gain.linearRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(sfxBus);
+  o.connect(g); g.connect(vSfx);
   [o, trill, am].forEach(function (n) { n.start(t); n.stop(t + dur + 0.02); });
   // 입김
   const n = ctx.createBufferSource(); n.buffer = noiseBuf;
@@ -373,7 +376,7 @@ function whistle(t, gain, dur) {
   ng.gain.setValueAtTime(0.0001, t);
   ng.gain.linearRampToValueAtTime(gain * 0.2, t + 0.01);
   ng.gain.linearRampToValueAtTime(0.0001, t + dur);
-  n.connect(nf); nf.connect(ng); ng.connect(sfxBus);
+  n.connect(nf); nf.connect(ng); ng.connect(vSfx);
   n.start(t, Math.random() * 2); n.stop(t + dur + 0.02);
 }
 
@@ -384,7 +387,7 @@ function crowd(t, gain, dur) {
   out.gain.linearRampToValueAtTime(gain, t + 0.35);
   out.gain.setValueAtTime(gain, t + dur - 0.9);
   out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  out.connect(sfxBus);
+  out.connect(vSfx);
 
   const voices = ctx.createGain(); voices.gain.value = 3; // 공명 필터를 지나며 줄어드는 만큼 보충
   [[800, 4, 1], [1250, 5, 0.6], [2600, 6, 0.25]].forEach(function (fm) {
@@ -478,7 +481,7 @@ const PATTERNS = {
   withdraw: [{ t: 0, k: 'dung', g: 0.6, f: 60 }, { t: 0.25, k: 'dung', g: 0.6, f: 60 }, { t: 0.5, k: 'ttak', g: 0.5 }],
   blocked: [{ t: 0, k: 'dung', g: 0.7, f: 48, muffled: true }],
   // 밤이 넘어갈 때: 낮은 징 한 번
-  night: [{ t: 0, k: 'jing', g: 0.35, f: 150, dur: 3.5 }, { t: 0, k: 'dung', g: 0.4, f: 54 }],
+  night: [{ t: 0, k: 'jing', g: 0.35, f: 150, dur: 2.6 }, { t: 0, k: 'dung', g: 0.4, f: 54 }],
   // 태극기 완성: 여럿이 크게 쿵! 쿵! 쿵! → 함성
   flag: [
     { t: 0, k: 'dung', g: 1.1, f: 60, n: 3 }, { t: 0, k: 'ttak', g: 0.5 },
@@ -488,6 +491,11 @@ const PATTERNS = {
   ],
   dawn: DAWN
 };
+
+// 소리의 무게: 새 소리는 같거나 가벼운 앞 소리의 여운을 FADE_TO까지 줄인다.
+// 0(버튼 딱)은 아무것도 줄이지 않고, 새벽(5)은 다른 소리에 줄지 않는다.
+const PRIORITY = { tap: 0, select: 0, night: 1, place: 2, reward: 2, eye: 2, blocked: 2, combo: 3, scatter: 3, withdraw: 3, flag: 4, dawn: 5 };
+const FADE_TO = 0.12;
 
 // ------------------------------------------------------------------
 // 공개 함수
@@ -516,16 +524,40 @@ export const Sound = {
     else { ctx.resume().then(function () { if (bgmEnabled) startBgm(); }); }
   },
 
+  /** 장단의 마지막 타격이 시작되는 시각(초). 결과음을 차례로 이어 칠 때 쓴다 */
+  span(name) {
+    const pat = PATTERNS[name];
+    if (!pat) return 0;
+    return pat.reduce(function (m, h) { return Math.max(m, h.t); }, 0);
+  },
+
   /** 효과음 재생. name은 PATTERNS의 키, delay는 초 */
   play(name, delay) {
     if (!sfxEnabled || !ctx || ctx.state !== 'running') return;
     const pat = PATTERNS[name];
     if (!pat) return;
     const t0 = ctx.currentTime + 0.01 + (delay || 0);
+    const prio = PRIORITY[name] || 0;
+    // 겹침 정리: 새 소리가 시작되는 순간, 이미 울리고 있던 소리 중 같거나 낮은 무게의 여운을 줄인다.
+    // (징 여운 위에 다음 징 · 북이 쌓이지 않도록. 버튼 '딱'은 아무것도 줄이지 않는다.
+    //  한 행동에서 한꺼번에 예약한 소리끼리는 만든 시각(currentTime)이 같으므로 서로 줄이지 않는다)
+    voices = voices.filter(function (v) { return v.end > ctx.currentTime; });
+    if (prio > 0) {
+      voices.forEach(function (v) {
+        if (v.made < ctx.currentTime && v.prio <= prio) {
+          v.gains.forEach(function (g) { g.gain.setTargetAtTime(FADE_TO, t0, 0.05); });
+        }
+      });
+    }
+    vDrum = ctx.createGain(); vDrum.connect(drumBus);
+    vSfx = ctx.createGain(); vSfx.connect(sfxBus);
+    vHall = ctx.createGain(); vHall.connect(hall);
+    let end = t0;
     let heavyFrom = Infinity, heavyTo = -Infinity;
     pat.forEach(function (h) {
+      end = Math.max(end, t0 + h.t + (h.dur || 1.3));
       const t = t0 + h.t;
-      if (h.k === 'ttak') { rimHit(sfxBus, t, h.g * 2.5); return; }
+      if (h.k === 'ttak') { rimHit(vSfx, t, h.g * 2.5); return; }
       if (h.k === 'dung') drumHit(t, { freq: h.f, gain: h.g, n: h.n, muffled: h.muffled, far: h.far });
       else if (h.k === 'jing') jing(t, h.g, h.f, h.dur);
       else if (h.k === 'whistle') whistle(t, h.g, h.dur);
@@ -536,5 +568,6 @@ export const Sound = {
       heavyTo = Math.max(heavyTo, t + len);
     });
     if (heavyTo > heavyFrom) duck(heavyFrom, heavyTo, 0.35);
+    voices.push({ gains: [vDrum, vSfx, vHall], prio: prio, made: ctx.currentTime, end: end + 0.5 });
   }
 };

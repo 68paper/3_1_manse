@@ -40,20 +40,10 @@ const state = {
   practiceSeats: null,               // 이번 판에 실제로 앉은 자리(다시 하기용)
   aiTimer: null,
   lastTurnId: null,
+  dawnFor: null,                       // 새벽 화면을 이미 예약한 판(두 번 가지 않도록)
   pulseCell: null,                     // 방금 주사위를 놓은 칸(한 번만 튕기는 연출)
   track: { game: null, shown: {}, timer: null } // 점수판: 말이 지금 서 있는 칸(한 칸씩 걸어가게)
 };
-
-const PROVINCES = [
-  { key: 'gyeonggi', name: '경기도', open: true },
-  { key: 'gangwon', name: '강원도', open: false },
-  { key: 'chungcheong', name: '충청도', open: false },
-  { key: 'jeolla', name: '전라도', open: false },
-  { key: 'gyeongsang', name: '경상도', open: false },
-  { key: 'hwanghae', name: '황해도', open: false },
-  { key: 'pyeongan', name: '평안도', open: false },
-  { key: 'hamgyeong', name: '함경도', open: false }
-];
 
 // ------------------------------------------------------------------
 // 화면 전환
@@ -84,20 +74,7 @@ function renderTitleFlag() {
 }
 
 // ------------------------------------------------------------------
-// 팔도 캠페인 — 지도
-// ------------------------------------------------------------------
-function renderProvinceGrid() {
-  const wrap = document.getElementById('province-grid');
-  wrap.innerHTML = PROVINCES.map(function (p) {
-    return '<button class="province-btn" data-province="' + p.key + '" ' + (p.open ? '' : 'disabled') + '>' +
-      '<div class="name">' + p.name + '</div>' +
-      '<div class="status">' + (p.open ? '입장 가능' : '준비 중') + '</div>' +
-      '</button>';
-  }).join('');
-}
-
-// ------------------------------------------------------------------
-// 팔도 캠페인 — 단계 목록
+// 게임 익히기 — 단계 목록(타이틀에서 바로 들어온다)
 // ------------------------------------------------------------------
 function renderCampaignList() {
   const list = document.getElementById('campaign-level-list');
@@ -146,7 +123,7 @@ function renderRules() {
     </div>
     <div class="rules-block">
       <h3>세 가지 놀이 방법</h3>
-      <p><b>팔도 캠페인</b> — 지역별로 이어지는 단계. 별을 모아 다음 단계를 열어요.<br>
+      <p><b>게임 익히기</b> — 미션을 하나씩 풀며 규칙을 익혀요. 별을 모아 다음 단계를 열어요.<br>
       <b>스무하루의 밤</b> — 2·8 독립선언부터 3월 1일 새벽까지, 이야기와 함께 스물한 밤을 버텨요.<br>
       <b>자유 연습</b> — 3~5명이 AI나 친구와 함께 여덟 밤을 겨뤄요. 친구와는 한 기기를 돌려 가며 둬요.</p>
       <p class="muted">여럿이 할 때는 주사위를 모두 함께 쓰는 공용 풀에서 골라요(인원×2+2개). 밤마다 점수판에서 가장 뒤에 있는 사람부터 차례로 두 개씩 놓아요. 같은 칸에 말이 쌓여 있으면 아래에 깔린 말이 먼저 고르고, 끝났을 때는 위에 올라선 말이 앞서요.</p>
@@ -333,7 +310,7 @@ function renderGame() {
   }
 
   if (snap.done) {
-    setTimeout(goToDawn, 450);
+    if (state.dawnFor !== g) { state.dawnFor = g; setTimeout(goToDawn, 450); }
   } else {
     announceTurn(snap);
     scheduleAi();
@@ -528,7 +505,7 @@ function renderStoryPanel(snap) {
       '</details>' : '');
 }
 
-// 캠페인 미션 카드: 별1 목표의 진행 · 별 기준 · 단계 안내
+// 게임 익히기 미션 카드: 별1 목표의 진행 · 별 기준 · 단계 안내
 function renderMission(g, snap) {
   const el = document.getElementById('mission');
   if (state.mode !== 'campaign') { el.hidden = true; return; }
@@ -641,17 +618,18 @@ function playActionSounds(before) {
   const changed = ['placements', 'same', 'consec', 'color', 'scatterLines', 'withdrawn', 'blocked', 'eyesRemoved']
     .some(function (k) { return a[k] !== b[k]; }) || after.pieces !== before.pieces || after.night !== before.night;
   if (!changed) { Sound.play('select'); return; } // 남길 사람 고르기 등
-  if (a.placements > b.placements) Sound.play('place');
-  // 놓은 소리 뒤에 이어서 결과 소리를 친다.
-  const d = a.placements > b.placements ? 0.18 : 0;
-  if (after.flags > before.flags) Sound.play('flag', d);
-  else if (after.pieces > before.pieces) Sound.play('reward', d);
-  if (a.same + a.consec + a.color > b.same + b.consec + b.color) Sound.play('combo', d);
-  if (a.scatterLines > b.scatterLines) Sound.play('scatter', d);
-  if (a.withdrawn > b.withdrawn) Sound.play('withdraw', d);
-  if (a.blocked > b.blocked) Sound.play('blocked', d);
-  if (a.eyesRemoved > b.eyesRemoved) Sound.play('eye', d);
-  if (!after.done && after.night > before.night) Sound.play('night', d + 0.5);
+  // 놓은 소리 뒤에 결과 소리를 하나씩 이어 친다(동시에 시작하면 북이 뭉개진다).
+  let d = 0;
+  const next = function (name, gap) { Sound.play(name, d); d += Sound.span(name) + gap; };
+  if (a.placements > b.placements) next('place', 0.18);
+  if (a.same + a.consec + a.color > b.same + b.consec + b.color) next('combo', 0.3);
+  if (a.eyesRemoved > b.eyesRemoved) next('eye', 0.25);
+  if (after.flags > before.flags) next('flag', 0.3);
+  else if (after.pieces > before.pieces) next('reward', 0.25);
+  if (a.scatterLines > b.scatterLines) next('scatter', 0.25);
+  if (a.withdrawn > b.withdrawn) next('withdraw', 0.25);
+  if (a.blocked > b.blocked) next('blocked', 0.25);
+  if (!after.done && after.night > before.night) Sound.play('night', d + 0.3);
 }
 
 // ------------------------------------------------------------------
@@ -895,12 +873,6 @@ function wireStaticEvents() {
       showScreen(target);
       return;
     }
-    const province = e.target.closest('[data-province]');
-    if (province && !province.disabled) {
-      renderCampaignList();
-      showScreen('campaign-list');
-      return;
-    }
     const levelBtn = e.target.closest('[data-level]');
     if (levelBtn && !levelBtn.disabled) {
       const lv = state.levelsById[levelBtn.dataset.level];
@@ -1018,7 +990,6 @@ async function init() {
   requestPersistentStorage();
   applySoundSettings();
   renderTitleFlag();
-  renderProvinceGrid();
   wireStaticEvents();
   showScreen('title');
   try { await loadLevels(); } catch (e) { /* 목록이 없어도 자유 연습은 동작 */ }
