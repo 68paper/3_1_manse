@@ -309,3 +309,16 @@ export function saveEndlessResult(score, nights) {
   if (isNew) storageSet('endless21', best);
   return { best: best, isNew: isNew };
 }
+
+/** 단속의 밤 기록. { flags, stars } — 최다 장 수와 최고 별을 따로 보관 */
+export function getCrackdownBest() {
+  return storageGet('crackdown', null);
+}
+/** 결과를 기록하고 { best, isNew }를 돌려준다(isNew: 장 수가 늘었을 때) */
+export function saveCrackdownResult(flags, stars) {
+  const cur = getCrackdownBest() || { flags: 0, stars: 0 };
+  const isNew = flags > cur.flags;
+  const best = { flags: Math.max(cur.flags, flags), stars: Math.max(cur.stars, stars) };
+  storageSet('crackdown', best);
+  return { best: best, isNew: isNew };
+}

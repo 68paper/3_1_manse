@@ -1,0 +1,21 @@
+{
+  "stories": [
+    { "id": "lodging",   "pile": "early", "order": 1,  "period": "2월 8일 뒤",  "name": "유학생 하숙집 수색",      "background": "도쿄에서 2·8 독립선언을 마치고 돌아온 유학생들을 쫓아 하숙집을 뒤졌어요." },
+    { "id": "mail",      "pile": "early", "order": 2,  "period": "2월 상순",   "name": "우편 검열",               "background": "도쿄와 서울을 오가는 편지를 뜯어 읽으며 소식을 막으려 했어요." },
+    { "id": "dorm",      "pile": "early", "order": 3,  "period": "2월 중순",   "name": "기숙사 점호",             "background": "학생들이 몰래 모이기 시작하자, 밤마다 기숙사 외출을 단속했어요." },
+    { "id": "chapel",    "pile": "early", "order": 4,  "period": "2월 중순",   "name": "예배당 앞 잠복",          "background": "교회와 절에 드나드는 사람들을 살피며 종교인들의 만남을 엿봤어요." },
+    { "id": "market",    "pile": "early", "order": 5,  "period": "2월 중순",   "name": "장터 순찰",               "background": "장날마다 모여드는 사람들 사이를 돌며 수상한 말을 엿들었어요." },
+    { "id": "jongno",    "pile": "early", "order": 6,  "period": "2월 중순",   "name": "종로 거리 검문",          "background": "도심을 오가는 행인을 붙잡고 불심검문을 했어요." },
+    { "id": "cheondo",   "pile": "late",  "order": 7,  "period": "2월 하순",   "name": "천도교 중앙총부 감시",    "background": "손병희를 중심으로 한 천도교 쪽 움직임을 감시했어요." },
+    { "id": "seungdong", "pile": "late",  "order": 8,  "period": "2월 하순",   "name": "승동교회 학생 모임 탐문", "background": "승동교회에서 학생 대표들이 모였다는 소문을 캐물었어요." },
+    { "id": "funeral",   "pile": "late",  "order": 9,  "period": "2월 하순",   "name": "국장 대비 경계",          "background": "3월 3일 고종의 국장을 앞두고 서울 곳곳의 경계를 강화했어요." },
+    { "id": "boseongsa", "pile": "late",  "order": 10, "period": "2월 27일",   "name": "보성사에 형사가 들다",    "background": "보성사에서 선언서를 찍던 밤, 형사에게 들켰다는 이야기가 전해져요." },
+    { "id": "leaflet",   "pile": "late",  "order": 11, "period": "2월 28일",   "name": "선언서 배포 수색",        "background": "밤사이 선언서가 사람들 손으로 퍼지자 집집이 뒤지기 시작했어요." },
+    { "id": "station",   "pile": "late",  "order": 12, "period": "2월 28일",   "name": "기차역 검문",             "background": "선언서를 지방으로 나르는 길목인 기차역에서 짐을 뒤졌어요." }
+  ],
+  "patterns": {
+    "early": [[5], [1], [9], [3], [7], [8]],
+    "late":  [[1, 2], [4, 6], [2, 8], [3, 7]],
+    "final": [[2, 4, 6], [1, 5, 9]]
+  }
+}

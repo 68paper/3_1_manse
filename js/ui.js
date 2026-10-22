@@ -9,9 +9,11 @@ import {
   makePracticeLevel, makeEndlessLevel, saveEndlessResult,
   requestPersistentStorage, getSettings, setSettings,
   getCampaignProgress, saveCampaignResult, isLevelUnlocked,
-  getPracticeSetup, savePracticeSetup, getSavedNames, addSavedNames
+  getPracticeSetup, savePracticeSetup, getSavedNames, addSavedNames,
+  saveCrackdownResult
 } from './solo.js';
 import { MultiGame } from './multi.js';
+import { CrackdownGame, makeCrackdownLevel, nightOrdinal, CRACKDOWN_CONFIG } from './crackdown.js';
 import { Engine } from './engine.js';
 import {
   taegeukgiFlag, trigramIcon, dieIcon, lanternIcon, pieceIcon
@@ -32,7 +34,12 @@ const state = {
   levelsById: {},
   game: null,
   level: null,
-  mode: null, // 'practice' | 'campaign' | 'endless'
+  mode: null, // 'practice' | 'campaign' | 'endless' | 'crackdown'
+  crackdownCards: null,                // data/crackdown.json({ stories, patterns })
+  dayTimer: null,                      // 단속의 밤: 낮 단속을 한 칸씩 진행하는 타이머
+  dayCell: null,                       // 방금 낮 단속이 지나간 칸과 결과({ cell, kind })
+  crackdownResult: null,
+  storyPopupKey: null,                 // 이미 팝업으로 보여 준 밤(같은 이야기를 두 번 띄우지 않도록)
   returnScreen: 'title',
   settings: getSettings(),
   dawnPending: [],
@@ -55,6 +62,8 @@ function showScreen(name) {
   document.getElementById('overlay-panel').hidden = true;
   document.getElementById('info-modal').hidden = true;
   clearTimeout(state.aiTimer);
+  clearTimeout(state.dayTimer); state.dayTimer = null;
+  document.body.classList.remove('is-day');
   window.scrollTo(0, 0);
 }
 
@@ -163,11 +172,21 @@ function renderRules() {
       <p><b>스무하루의 밤</b>은 1919년 2월 8일부터 2월 28일까지 스물한 밤이에요. 밤마다 그 무렵 3·1 운동을 준비하던 이야기가 펼쳐지고, 끝까지 버티면 3월 1일 새벽을 맞아요. 그 전에 가로 세 줄과 세로 세 줄 모두에 밀정이 자리 잡으면 <b>판이 막혀</b> 끝나요. 언제든 종료 버튼으로 그때까지의 점수를 기록하고 마칠 수도 있어요.</p>
     </div>
     <div class="rules-block">
-      <h3>세 가지 놀이 방법</h3>
+      <h3>네 가지 놀이 방법</h3>
       <p><b>게임 익히기</b> — 미션을 하나씩 풀며 규칙을 익혀요. 별을 모아 다음 단계를 열어요.<br>
       <b>스무하루의 밤</b> — 2·8 독립선언부터 3월 1일 새벽까지, 이야기와 함께 스물한 밤을 버텨요.<br>
+      <b>단속의 밤</b> — 낮마다 오는 단속을 피해 숨겨 둔 태극기를 지키며 여덟 밤을 보내요.<br>
       <b>자유 연습</b> — 3~5명이 AI나 친구와 함께 여덟 밤을 겨뤄요. 친구와는 한 기기를 돌려 가며 둬요.</p>
       <p class="muted">여럿이 할 때는 밤마다 광장에 (인원×2+2)개를 꺼내요. 점수판 「3월 1일로 가는 길」에서 가장 뒤에 있는 사람부터 차례로 고르고, 같은 칸에 말이 쌓여 있으면 아래에 깔린 말이 먼저 골라요. 순서는 밤을 시작할 때 정해져 밤 도중에는 바뀌지 않아요. 여덟 밤 뒤 가장 앞선 사람이 이기고, 같은 칸이면 위에 올라선 말(나중에 도착한 말)이 앞서요.</p>
+    </div>
+    <div class="rules-block">
+      <h3>단속의 밤</h3>
+      <p>조각 대신 <b>숨겨 둔 태극기</b>를 세요. 처음에 ${CRACKDOWN_CONFIG.START_FLAGS}장을 숨겨 두고 시작해요.</p>
+      <p>한 밤은 <b>손 네 번</b>이에요. 손마다 주머니에서 주사위 4개를 꺼내 하나를 놓고, 남은 셋 중 하나를 더 놓아요. 나머지 둘은 주머니로 돌아가요. 놓기 · 모둠 · 흩어짐 · 감시 철수는 기본 규칙 그대로예요.</p>
+      <p>한뜻 · 연락망은 <b>+2장</b>, 한동네는 <b>+1장</b>이에요(교차 완성이면 둘 다). 손에서 밀정을 놓으면 <b>1장 압수</b>돼요.</p>
+      <p>밤마다 그날 낮의 <b>단속 카드</b>가 미리 공개돼요. 밤이 끝나면 카드에 표시된 칸을 하나씩 살펴서, <b>비어 있으면 밀정이 들어오고 1장 압수</b>, 사람이 서 있으면 지켜 내요. 들어온 밀정 때문에 줄이 가득 차면 흩어짐 · 감시 철수도 그대로 일어나요.</p>
+      <p>단속은 3월 1일이 다가올수록 거세져요. 처음 세 번은 한 칸, 다음 세 번은 두 칸, 마지막 낮에는 세 칸을 노려요. 카드의 이야기는 그 무렵 실제로 있었던 일의 순서를 따라가요.</p>
+      <p class="muted">숨겨 둔 태극기가 0장이 되는 순간 끝나요. 여덟째 밤 뒤에는 단속 없이 3월 1일 아침이 밝고, 손에 든 장 수로 별을 받아요(★${CRACKDOWN_CONFIG.STARS[0]}장 ★★${CRACKDOWN_CONFIG.STARS[1]}장 ★★★${CRACKDOWN_CONFIG.STARS[2]}장).</p>
     </div>
     <div class="rules-block">
       <h3>주사위 속 사람들</h3>
@@ -250,17 +269,25 @@ function startGame(level, mode, seats) {
   clearTimeout(state.aiTimer);
   state.level = level;
   state.mode = mode;
-  state.game = mode === 'practice' ? new MultiGame(level, seats) : new SoloGame(level, mode, {});
+  clearTimeout(state.dayTimer); state.dayTimer = null;
+  if (mode === 'practice') state.game = new MultiGame(level, seats);
+  else if (mode === 'crackdown') state.game = new CrackdownGame(level, state.crackdownCards);
+  else state.game = new SoloGame(level, mode, {});
   state.lastTurnId = null;
   state.pulseCell = null;
+  state.dayCell = null;
+  state.storyPopupKey = null;
   clearTimeout(state.track.timer); state.track.timer = null; state.track.game = null;
   state.returnScreen = mode === 'campaign' ? 'campaign-list' : 'title';
   // 스무하루의 밤은 ← 대신 '종료'(점수 기록 후 끝내기)
   document.getElementById('btn-game-exit').hidden = mode === 'endless';
   document.getElementById('btn-game-quit').hidden = mode !== 'endless';
-  document.getElementById('score-badge').hidden = mode === 'practice'; // 여럿일 때는 아래 점수 줄로
+  // 여럿일 때는 아래 점수 줄로, 단속의 밤은 위쪽 상태 줄(숨겨 둔 태극기)로
+  document.getElementById('score-badge').hidden = mode === 'practice' || mode === 'crackdown';
   showScreen('game');
   document.getElementById('story-panel').dataset.night = '';
+  document.getElementById('cd-status').innerHTML = '';
+  document.getElementById('cd-panel').dataset.key = '';
   renderGame();
   if (mode === 'campaign') openMissionModal(); // 단계 시작 때 미션 설명을 먼저 보여 준다
 }
@@ -293,8 +320,17 @@ function renderGame() {
   document.getElementById('game-message').textContent = snap.message;
   renderPlayersBar(snap);
   renderScoreTrack(snap);
+  renderCrackdown(snap);
 
   renderMission(g, snap);
+
+  // 단속의 밤: 이번 낮에 밀정이 올 칸(낮 단속 중이면 아직 지나가지 않은 칸만)
+  let cdMarks = [];
+  if (snap.crackdown && !snap.done && snap.crackdown.card) {
+    const day = snap.crackdown.day;
+    const passed = day ? day.results.map(function (r) { return r.cell; }) : [];
+    cdMarks = snap.crackdown.card.cells.filter(function (c) { return passed.indexOf(c) < 0; });
+  }
 
   // 판
   const boardEl = document.getElementById('board');
@@ -303,6 +339,12 @@ function renderGame() {
   for (let i = 0; i < 9; i++) {
     const die = snap.board[i];
     const classes = ['cell'];
+    let mark = '';
+    if (cdMarks.indexOf(i) >= 0) {
+      classes.push(die ? 'cd-guard' : 'cd-mark');
+      mark = die ? '<span class="cd-guard-tag">지켜 냄</span>' : '<span class="cd-eye">' + MINI_EYE + '</span>';
+    }
+    if (state.dayCell && state.dayCell.cell === i) classes.push(state.dayCell.kind === 'spy' ? 'cd-hit' : 'cd-saved');
     if (snap.phase === 'place' && snap.selectedPi != null && snap.validCells.indexOf(i) >= 0) {
       classes.push('valid');
       if (showScatterHint && g.wouldScatterAt(snap.selectedPi, i)) classes.push('scatter-warn');
@@ -310,10 +352,11 @@ function renderGame() {
     if (snap.phase === 'combo_keep' && snap.keepLine && snap.keepLine.indexOf(i) >= 0) classes.push('choosable');
     if ((snap.phase === 'combo_eye' || snap.phase === 'blocked_eye') && snap.eyeOptions && snap.eyeOptions.indexOf(i) >= 0) classes.push('choosable');
     if (state.pulseCell === i) classes.push('pulse');
-    boardHtml += '<div class="' + classes.join(' ') + '" data-cell="' + i + '">' + (die ? dieIcon(die.color, die.value, 50) : '') + '</div>';
+    boardHtml += '<div class="' + classes.join(' ') + '" data-cell="' + i + '">' + (die ? dieIcon(die.color, die.value, 50) : '') + mark + '</div>';
   }
   boardEl.innerHTML = boardHtml;
   state.pulseCell = null; // 튕김은 놓은 직후 한 번만
+  state.dayCell = null;
 
   // 풀
   const poolEl = document.getElementById('pool');
@@ -323,9 +366,15 @@ function renderGame() {
     return '<button class="die-btn' + sel + '" data-pi="' + i + '" ' + (poolClickable ? '' : 'disabled') + '>' + dieIcon(d.color, d.value, 54, { selected: snap.selectedPi === i }) + '</button>';
   }).join('');
   const nightLabel = state.mode === 'endless' ? nightDate(snap.night) + ' 밤' : snap.night + '/' + snap.maxNights + '번째 밤';
-  document.getElementById('placements-left').textContent = snap.done ? '' : ('이번 밤 남은 배치: ' + snap.placementsLeft + '번 · ' + nightLabel);
+  let leftText = snap.done ? '' : ('이번 밤 남은 배치: ' + snap.placementsLeft + '번 · ' + nightLabel);
+  if (snap.crackdown && !snap.done) {
+    const cd = snap.crackdown;
+    leftText = snap.phase === 'day' ? '낮 · 단속' : '이번 밤 손 ' + cd.hand + ' / ' + cd.handsPerNight + ' · 2개 중 ' + cd.pick + '개째';
+  }
+  document.getElementById('placements-left').textContent = leftText;
 
-  // 기록지 · 이야기
+  // 기록지 · 이야기 (단속의 밤은 조각을 쓰지 않아 기록지를 숨긴다)
+  document.getElementById('record-sheet').hidden = state.mode === 'crackdown';
   renderRecordSheet(snap.parts, snap.flags, snap.pushed);
   renderStoryPanel(snap);
 
@@ -356,11 +405,166 @@ function renderGame() {
   }
 
   if (snap.done) {
-    if (state.dawnFor !== g) { state.dawnFor = g; setTimeout(goToDawn, 450); }
+    // 단속의 밤에서 태극기를 다 빼앗기면, 압수 연출을 잠깐 보여 준 뒤 넘어간다
+    const delay = snap.crackdown && snap.crackdown.failed ? 1600 : 450;
+    if (state.dawnFor !== g) { state.dawnFor = g; setTimeout(goToDawn, delay); }
   } else {
     announceTurn(snap);
     scheduleAi();
+    scheduleDay(snap);
+    showStoryPopup(snap);
   }
+}
+
+// 새 밤이 시작되어 내 차례가 돌아오면, 그 밤의 이야기(스무하루의 밤) · 단속 카드(단속의 밤)를 팝업으로 띄운다.
+// 닫기를 눌러야 사라지고, 게임 화면의 이야기 · 예고 패널은 그대로 남는다. 밤마다 한 번만.
+function showStoryPopup(snap) {
+  let key = null, title, tag, body;
+  if (snap.crackdown && snap.phase !== 'day') {
+    key = 'cd-' + snap.night;
+    const card = snap.crackdown.card;
+    if (card) {
+      const cells = card.cells.map(function (c) { return c + 1; });
+      let mini = '';
+      for (let i = 0; i < 9; i++) mini += '<span' + (card.cells.indexOf(i) >= 0 ? ' class="on"' : '') + '></span>';
+      title = card.name;
+      tag = nightOrdinal(snap.night) + ' 밤' + (card.period ? ' · ' + card.period : '') + ' · 오늘 낮 단속 ' + cells.join('·') + '번 칸';
+      body = '<p>' + escapeHtml(card.background) + '</p>' +
+        '<div class="story-cells"><div class="cd-mini" aria-hidden="true">' + mini + '</div>' +
+        '<span>밤이 끝나면 표시된 칸이 비어 있을 때 밀정이 들어와 태극기 1장을 빼앗아 가요. 사람을 세워 지켜 주세요.</span></div>';
+    } else {
+      title = '마지막 밤';
+      tag = nightOrdinal(snap.night) + ' 밤 · 낮 단속 없음';
+      body = '<p>오늘 밤이 지나면 1919년 3월 1일이에요. 숨겨 둔 태극기를 끝까지 지켜 주세요.</p>';
+    }
+  } else if (state.mode === 'endless') {
+    const cur = latestStory(snap.night);
+    if (cur.night !== snap.night) return; // 이 밤에 새 이야기가 없으면 띄우지 않는다
+    key = 'en-' + snap.night;
+    title = cur.story.title;
+    tag = nightDate(snap.night) + ' 밤 · ' + cur.story.period;
+    body = cur.story.body;
+  }
+  if (!key || state.storyPopupKey === key) return;
+  state.storyPopupKey = key;
+  openInfoModal(title, tag, body, true);
+}
+
+// ------------------------------------------------------------------
+// 단속의 밤 — 상태 줄 · 단속 예고 패널 · 장 수 연출 · 낮 진행
+// ------------------------------------------------------------------
+function renderCrackdown(snap) {
+  const statusEl = document.getElementById('cd-status');
+  const panelEl = document.getElementById('cd-panel');
+  const on = !!snap.crackdown;
+  statusEl.hidden = !on;
+  panelEl.hidden = !on || snap.done;
+  document.body.classList.toggle('is-day', on && snap.phase === 'day');
+  if (!on) return;
+  const cd = snap.crackdown;
+
+  // 위쪽 상태 줄: 몇째 밤 · 숨겨 둔 태극기 · 빼앗긴 장 수 (연출용 .cd-fx는 다시 그려도 남도록 한 번만 만든다)
+  if (!statusEl.firstChild) statusEl.innerHTML = '<div class="cd-row"></div><div class="cd-fx"></div>';
+  statusEl.querySelector('.cd-row').innerHTML =
+    '<span class="cd-night">' + nightOrdinal(snap.night) + ' 밤</span>' +
+    '<span class="cd-hidden">' + taegeukgiFlag(24) + '숨겨 둔 태극기 <b>' + cd.hidden + '</b>장</span>' +
+    '<span class="cd-seized">빼앗긴 ' + cd.seized + '장</span>';
+  showCrackdownEvents(state.game.takeEvents());
+
+  // 단속 예고 패널
+  if (snap.done) return;
+  const card = cd.card;
+  let key, html;
+  if (!card) {
+    key = 'none-' + snap.night;
+    html = '<div class="cd-info"><div class="cd-tag">오늘 밤이 지나면 3월 1일</div>' +
+      '<div class="cd-name">이번 낮에는 단속이 없어요</div>' +
+      '<div class="cd-bg">마지막 밤이에요. 숨겨 둔 태극기를 끝까지 지켜 주세요.</div></div>';
+  } else {
+    key = card.id + '-' + snap.night;
+    const passed = cd.day ? cd.day.results.map(function (r) { return r.cell; }) : [];
+    let mini = '';
+    for (let i = 0; i < 9; i++) {
+      const cls = card.cells.indexOf(i) >= 0 ? 'on' + (passed.indexOf(i) >= 0 ? ' past' : '') : '';
+      mini += '<span' + (cls ? ' class="' + cls + '"' : '') + '></span>';
+    }
+    html = '<div class="cd-mini" aria-hidden="true">' + mini + '</div>' +
+      '<div class="cd-info"><div class="cd-tag">' + (cd.day ? '낮 단속 중' : '오늘 낮 단속 예고') +
+      ' · ' + card.cells.map(function (c) { return c + 1; }).join('·') + '번 칸</div>' +
+      '<div class="cd-name">' + escapeHtml(card.name) + '</div>' +
+      '<div class="cd-bg">' + (card.period ? escapeHtml(card.period) + ' · ' : '') + escapeHtml(card.background) + '</div></div>';
+  }
+  panelEl.innerHTML = html;
+  panelEl.classList.toggle('day', !!cd.day);
+  if (panelEl.dataset.key !== key) {
+    panelEl.dataset.key = key;
+    panelEl.classList.remove('fresh');
+    void panelEl.offsetWidth; // 애니메이션을 처음부터 다시
+    panelEl.classList.add('fresh');
+  }
+}
+
+// 장 수가 바뀌면 상태 줄 위로 +2장 / -1장이 떠오르고, 모둠 · 손에서 놓은 밀정은 토스트로 알린다
+// (낮 단속의 압수 토스트는 dayTick이 카드 이름과 함께 띄운다)
+function showCrackdownEvents(events) {
+  if (!events.length) return;
+  let delta = 0;
+  const msgs = [];
+  events.forEach(function (e) {
+    if (e.type === 'gain') { delta += e.flags; msgs.push(COMBO_NAME[e.combo] + ' — 태극기 ' + e.flags + '장을 숨겼어요'); }
+    if (e.type === 'seize') { delta -= e.flags; if (e.reason === 'self') msgs.push('밀정이 끼어들었어요 — 태극기 ' + e.flags + '장 압수'); }
+  });
+  if (msgs.length) toast(msgs.join(' · '));
+  if (delta === 0) return;
+  const fx = document.querySelector('#cd-status .cd-fx');
+  const el = document.createElement('div');
+  el.className = 'cd-float' + (delta < 0 ? ' minus' : '');
+  el.textContent = (delta > 0 ? '+' : '') + delta + '장';
+  fx.appendChild(el);
+  setTimeout(function () { el.remove(); }, 1400);
+  const pill = document.querySelector('#cd-status .cd-hidden');
+  if (pill) pill.classList.add('bump');
+}
+
+// 낮: "날이 밝았어요" → 표시 칸마다 한 칸씩(밀정 등장 또는 지켜 냄) → 다음 밤의 첫 손
+function scheduleDay(snap) {
+  if (!snap.crackdown || snap.phase !== 'day' || state.dayTimer) return;
+  const first = snap.crackdown.day.results.length === 0;
+  state.dayTimer = setTimeout(dayTick, first ? 1500 : 1200);
+}
+
+function dayTick() {
+  state.dayTimer = null;
+  const g = state.game;
+  if (!(g instanceof CrackdownGame) || g.phase !== 'day' || !document.getElementById('screen-game').classList.contains('active')) return;
+  if (g.dayPending) {
+    const card = g.dayState.card;
+    const r = g.dayStep();
+    state.dayCell = { cell: r.cell, kind: r.kind };
+    if (r.kind === 'spy') {
+      let msg = card.name + ' — 태극기 ' + r.seized + '장 압수';
+      if (r.scattered.length) msg += ' · 줄이 흩어졌어요';
+      if (r.withdrawn.length) msg += ' · 감시 철수';
+      toast(msg);
+      let d = 0;
+      const next = function (name, gap) { Sound.play(name, d); d += Sound.span(name) + gap; };
+      next('place', 0.15);
+      next('blocked', 0.2);
+      if (r.scattered.length) next('scatter', 0.2);
+      if (r.withdrawn.length) next('withdraw', 0.2);
+    } else if (r.kind === 'guarded') {
+      toast((r.cell + 1) + '번 칸 — 사람이 지켜 냈어요');
+      Sound.play('select');
+    } else {
+      toast((r.cell + 1) + '번 칸 — 주머니가 비어 밀정이 오지 않았어요');
+    }
+  } else {
+    g.endDay();
+    Sound.play('night');
+    const c = g.card;
+    toast(nightOrdinal(g.night) + ' 밤 — ' + (c ? '오늘 낮 단속 예고: ' + c.name : '마지막 밤이에요'));
+  }
+  renderGame();
 }
 
 // 자유 연습: 이번 밤 고르는 순서대로 플레이어 카드(말 색 · 이름 · 점수 · 작은 판).
@@ -590,11 +794,13 @@ function renderMission(g, snap) {
 }
 
 // 안내 팝업(미션 설명 · 이야기 카드 공용): 제목 · 강조 한 줄 · 본문 HTML
-function openInfoModal(title, tag, bodyHtml) {
+// buttonOnly: 바깥을 눌러도 닫히지 않고 닫기 버튼으로만 닫힘(밤마다 뜨는 이야기 팝업)
+function openInfoModal(title, tag, bodyHtml, buttonOnly) {
   document.getElementById('info-modal-title').textContent = title;
   document.getElementById('info-modal-tag').textContent = tag;
   document.getElementById('info-modal-body').innerHTML = bodyHtml;
   document.getElementById('info-modal').hidden = false;
+  document.getElementById('info-modal').dataset.buttonOnly = buttonOnly ? '1' : '';
   document.getElementById('info-modal-close').focus();
 }
 
@@ -747,23 +953,33 @@ function goToDawn() {
   const stars = g.starsEarned();
   if (state.mode === 'campaign') saveCampaignResult(level.id, stars, g.score);
   state.endlessResult = state.mode === 'endless' ? saveEndlessResult(g.score, g.completed ? g.maxNights : g.night) : null;
+  state.crackdownResult = state.mode === 'crackdown' ? saveCrackdownResult(g.finished ? g.hidden : 0, stars) : null;
+  const crackdownFailed = state.mode === 'crackdown' && g.failed;
 
   showScreen('dawn');
-  if (g.endReason === 'sealed') { Sound.play('scatter'); Sound.play('dawn', 1.0); }
+  if (g.endReason === 'sealed' || crackdownFailed) { Sound.play('scatter'); Sound.play('dawn', 1.0); }
   else Sound.play('dawn');
   document.getElementById('dawn-result').hidden = true;
   document.getElementById('dawn-skip').hidden = false;
   const sky = document.getElementById('dawn-sky');
   sky.style.background = '#141a2b';
   document.getElementById('dawn-caption').textContent = g.endMessage();
-  setTimeout(function () { sky.style.background = 'linear-gradient(180deg, #b98763, #ebb866, #f8ecd2)'; }, 120);
+  setTimeout(function () {
+    sky.style.background = crackdownFailed ? 'linear-gradient(180deg, #2b2a3a, #6b5550, #b98763)' : 'linear-gradient(180deg, #b98763, #ebb866, #f8ecd2)';
+  }, 120);
 
   // 완성한 태극기 장 수만큼 빛바랜 태극기를 걸고, 누르면 색이 들어온다.
   // 자유 연습은 룰북 §9 행렬 세우기: 맨 앞 지방이 태극기 한 장을 든다.
   const flagCount = state.mode === 'practice' ? 0 : g.flags;
   state.dawnPending = [];
   const paintArea = document.getElementById('dawn-paint-area');
-  if (state.mode === 'practice') {
+  if (state.mode === 'crackdown') {
+    // 끝까지 지켜 냈으면 태극기 한 장을 크게 들고, 손에 든 장 수를 함께 적는다
+    paintArea.innerHTML = g.finished
+      ? '<div class="dawn-flag">' + taegeukgiFlag(150) + '<div class="cap">손에 든 태극기 <b>' + g.hidden + '</b>장</div></div>'
+      : '';
+    showDawnResult();
+  } else if (state.mode === 'practice') {
     const leader = g.standings()[0];
     paintArea.innerHTML = '<div class="dawn-flag">' + taegeukgiFlag(150) +
       '<div class="cap">가장 앞선 자리 ' + pawnDot(leader.id) + ' <b>' + escapeHtml(leader.name) + '</b></div></div>';
@@ -809,6 +1025,13 @@ function showDawnResult() {
         '<span class="pts">' + p.score + '점</span>' + miniBoard(p.board) + '</li>';
     }).join('');
     rankingEl.hidden = false;
+  } else if (state.mode === 'crackdown') {
+    document.getElementById('dawn-score-line').innerHTML = g.finished
+      ? '<div class="cd-sub">빼앗긴 태극기 ' + g.seized + '장</div>' +
+        '<div class="cd-sub">그래도 우리가 만든 태극기 ' + g.made + '장</div>' +
+        '<div class="cd-main">오늘, 손에 든 태극기 ' + g.hidden + '장으로 만세를 부릅니다.</div>'
+      : '<div class="cd-main">숨겨 둔 태극기를 모두 빼앗겼어요</div>';
+    rankingEl.hidden = true;
   } else {
     document.getElementById('dawn-score-line').textContent = g.score + '점 · 태극기 ' + g.flags + '장';
     rankingEl.hidden = true;
@@ -837,6 +1060,21 @@ function showDawnResult() {
     starsLineEl.hidden = !showNew;
     goalLineEl.textContent = (g.completed ? '스물한 밤을 모두 버텼어요' : nightDate(g.night) + ' 밤까지(' + g.night + '/' + g.maxNights + ')') +
       ' · 최고 기록 ' + r.best.score + '점(' + r.best.nights + '밤)';
+    goalLineEl.hidden = false;
+  } else if (state.mode === 'crackdown') {
+    const r = state.crackdownResult;
+    const at = g.failedAt;
+    if (g.finished) {
+      starsLineEl.textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+      starsLineEl.hidden = false;
+      const st = CRACKDOWN_CONFIG.STARS;
+      goalLineEl.textContent = (r.isNew ? '새 최고 기록! · ' : '') + '최고 기록 ' + r.best.flags + '장 · ' + '★'.repeat(r.best.stars) + '☆'.repeat(3 - r.best.stars) +
+        ' (★' + st[0] + '장 ★★' + st[1] + '장 ★★★' + st[2] + '장)';
+    } else {
+      starsLineEl.hidden = true;
+      goalLineEl.textContent = nightOrdinal(at.night) + ' 밤' + (at.when === 'day' ? ' 낮' : '') + '에 끝났어요 · 빼앗긴 ' + g.seized + '장 · 만든 ' + g.made + '장' +
+        (r.best.flags > 0 ? ' · 최고 기록 ' + r.best.flags + '장' : '');
+    }
     goalLineEl.hidden = false;
   } else {
     starsLineEl.hidden = true;
@@ -916,6 +1154,7 @@ function wireStaticEvents() {
       if (target === 'settings') renderSettings();
       if (target === 'practice-setup') renderPracticeSetup();
       if (target === 'endless-start') { startGame(makeEndlessLevel(), 'endless'); return; }
+      if (target === 'crackdown-start') { startCrackdown(); return; }
       showScreen(target);
       return;
     }
@@ -943,7 +1182,8 @@ function wireStaticEvents() {
       document.getElementById('story-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
-    if (e.target.closest('#info-modal-close') || e.target.id === 'info-modal') { closeInfoModal(); return; }
+    if (e.target.closest('#info-modal-close')) { closeInfoModal(); return; }
+    if (e.target.id === 'info-modal') { if (!e.target.dataset.buttonOnly) closeInfoModal(); return; }
     const cell = e.target.closest('#board .cell');
     if (cell) { onBoardClick(Number(cell.dataset.cell)); return; }
     const dieBtn = e.target.closest('#pool .die-btn');
@@ -981,6 +1221,7 @@ function wireStaticEvents() {
   document.getElementById('btn-dawn-again').addEventListener('click', function () {
     if (state.mode === 'practice') startGame(makePracticeLevel(), 'practice', state.practiceSeats);
     else if (state.mode === 'endless') startGame(makeEndlessLevel(), 'endless');
+    else if (state.mode === 'crackdown') startCrackdown();
     else startGame(state.level, 'campaign');
   });
 
@@ -1014,7 +1255,8 @@ function wireStaticEvents() {
   document.addEventListener('pointerdown', function () { Sound.unlock(); }, { capture: true });
   document.addEventListener('keydown', function (e) {
     Sound.unlock();
-    if (e.key === 'Escape' && !document.getElementById('info-modal').hidden) closeInfoModal();
+    const modal = document.getElementById('info-modal');
+    if (e.key === 'Escape' && !modal.hidden && !modal.dataset.buttonOnly) closeInfoModal();
   }, { capture: true });
   document.addEventListener('visibilitychange', function () { Sound.setHidden(document.hidden); });
 }
@@ -1024,6 +1266,20 @@ async function loadLevels() {
   const levels = await res.json();
   state.campaignLevels = levels;
   levels.forEach(function (lv) { state.levelsById[lv.id] = lv; });
+}
+
+async function loadCrackdownCards() {
+  const res = await fetch('data/crackdown.json');
+  state.crackdownCards = await res.json();
+}
+
+// 단속의 밤: 카드를 아직 못 불러왔으면 한 번 더 시도한다
+async function startCrackdown() {
+  if (!state.crackdownCards) {
+    try { await loadCrackdownCards(); } catch (e) { /* 아래에서 알림 */ }
+  }
+  if (!state.crackdownCards) { toast('단속 카드를 불러오지 못했어요.'); return; }
+  startGame(makeCrackdownLevel(), 'crackdown');
 }
 
 function registerServiceWorker() {
@@ -1039,6 +1295,7 @@ async function init() {
   wireStaticEvents();
   showScreen('title');
   try { await loadLevels(); } catch (e) { /* 목록이 없어도 자유 연습은 동작 */ }
+  try { await loadCrackdownCards(); } catch (e) { /* 단속의 밤을 시작할 때 다시 시도 */ }
   registerServiceWorker();
 }
 

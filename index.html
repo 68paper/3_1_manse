@@ -230,6 +230,7 @@
   .modal-card .modal-body { font-size: 14px; line-height: 1.6; }
   .modal-card .modal-body ul { margin: 4px 0 0; padding-left: 18px; opacity: .85; }
   .modal-card button { width: 100%; margin-top: 8px; }
+  .modal-card .story-cells { display: flex; align-items: center; gap: 10px; font-size: 13px; opacity: .85; }
 
   .board-wrap { display: flex; justify-content: center; }
   .board { width: min(78vw, 300px); aspect-ratio: 1; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); gap: 5px; background: var(--ink); padding: 5px; border-radius: 14px; }
@@ -277,6 +278,46 @@
   .story-past summary { cursor: pointer; padding: 6px 2px; opacity: .8; }
   .past-item { border-top: 1px dashed rgba(42,34,27,.3); padding: 6px 2px; }
   .past-item h4 { font-family: var(--font-title); font-size: 14px; margin: 1px 0; }
+
+  /* ---------- 단속의 밤 ---------- */
+  body { transition: background-color 1s ease; }
+  body.is-day { background-color: #f7edd6; }
+  .cd-status { position: relative; }
+  .cd-status .cd-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 10px; font-size: 13px; }
+  .cd-status .cd-night { font-family: var(--font-title); font-weight: 800; font-size: 14px; }
+  .cd-status .cd-hidden { display: flex; align-items: center; gap: 5px; background: var(--ink); color: var(--hanji); border-radius: 8px; padding: 3px 10px 3px 6px; white-space: nowrap; }
+  .cd-status .cd-hidden .art-flag { display: block; width: 24px; height: auto; }
+  .cd-status .cd-hidden b { font-family: var(--font-title); font-size: 17px; font-weight: 800; }
+  .cd-status .cd-hidden.bump { animation: cdBump .6s ease; }
+  .cd-status .cd-seized { opacity: .75; white-space: nowrap; }
+  .cd-status .cd-fx { position: absolute; inset: 0; pointer-events: none; }
+  .cd-float { position: absolute; left: 50%; top: -2px; font-family: var(--font-title); font-weight: 800; font-size: 18px; color: var(--tg-blue); text-shadow: 0 1px 0 var(--hanji); animation: cdFloat 1.3s ease forwards; }
+  .cd-float.minus { color: var(--tg-red); }
+  @keyframes cdFloat { 0% { opacity: 0; transform: translate(-50%, 8px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -24px); } }
+  @keyframes cdBump { 40% { transform: scale(1.15); } }
+  .cd-panel { display: flex; gap: 10px; align-items: center; background: rgba(205,189,152,.35); border-radius: 10px; padding: 6px 10px; }
+  .cd-panel.day { background: rgba(200,49,47,.12); }
+  .cd-panel.fresh { animation: storyIn .5s ease; }
+  .cd-mini { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 14px); gap: 2px; padding: 2px; background: var(--ink); border-radius: 4px; }
+  .cd-mini span { width: 14px; height: 14px; background: var(--board-bg); border-radius: 2px; }
+  .cd-mini span.on { background: var(--tg-red); }
+  .cd-mini span.on.past { background: #8a7f70; }
+  .cd-panel .cd-info { flex: 1; min-width: 0; }
+  .cd-panel .cd-tag { font-size: 11px; font-weight: 700; color: var(--tg-red); }
+  .cd-panel .cd-name { font-family: var(--font-title); font-weight: 800; font-size: 15px; line-height: 1.3; }
+  .cd-panel .cd-bg { font-size: 12px; opacity: .75; line-height: 1.4; }
+  .cell.cd-mark::after, .cell.cd-guard::after { content: ''; position: absolute; inset: 3px; border-radius: 7px; pointer-events: none; }
+  .cell.cd-mark::after { border: 2.5px dashed var(--tg-red); }
+  .cell.cd-guard::after { border: 2px solid var(--tg-blue); }
+  .cell .cd-eye { position: absolute; top: 5px; right: 5px; width: 22px; color: var(--tg-red); opacity: .85; pointer-events: none; }
+  .cell .cd-eye svg { display: block; width: 100%; height: auto; }
+  .cell .cd-guard-tag { position: absolute; top: 3px; left: 3px; z-index: 1; font-size: 10px; font-weight: 700; line-height: 1.4; background: var(--tg-blue); color: var(--hanji); border-radius: 4px; padding: 0 4px; pointer-events: none; }
+  .cell.cd-hit { animation: cdHit .9s ease; }
+  .cell.cd-saved { animation: cdSaved .9s ease; }
+  @keyframes cdHit { 0% { box-shadow: inset 0 0 0 999px rgba(200,49,47,.6); } 100% { box-shadow: inset 0 0 0 999px rgba(200,49,47,0); } }
+  @keyframes cdSaved { 0% { box-shadow: inset 0 0 0 999px rgba(31,78,154,.45); } 100% { box-shadow: inset 0 0 0 999px rgba(31,78,154,0); } }
+  #dawn-result .score-line .cd-sub { font-size: 16px; font-weight: 700; opacity: .75; }
+  #dawn-result .score-line .cd-main { font-size: 19px; margin-top: 4px; line-height: 1.4; word-break: keep-all; }
 
   .overlay-panel { position: fixed; left: 0; right: 0; bottom: 0; max-width: 430px; margin: 0 auto; background: var(--hanji); border-top: 2px solid var(--ink); border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom,0px)); box-shadow: 0 -6px 20px rgba(0,0,0,.15); z-index: 20; animation: slideup .18s ease; }
   @keyframes slideup { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -343,6 +384,7 @@
     <div class="menu">
       <button class="primary" data-nav="campaign-list">게임 익히기</button>
       <button data-nav="endless-start">스무하루의 밤</button>
+      <button data-nav="crackdown-start">단속의 밤</button>
       <button data-nav="practice-setup">자유 연습</button>
       <button data-nav="rules">규칙 보기</button>
       <button class="ghost" data-nav="settings">설정</button>
@@ -413,9 +455,11 @@
       <div class="score-badge" id="score-badge">0점</div>
       <button class="quit-btn" id="btn-game-quit" hidden>종료</button>
     </div>
+    <div class="cd-status" id="cd-status" hidden></div>
     <div class="score-track" id="score-track" hidden></div>
     <div class="players-bar" id="players-bar" hidden></div>
     <div class="mission" id="mission" hidden></div>
+    <div class="cd-panel" id="cd-panel" hidden></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     <div class="message" id="game-message"></div>
     <div class="pool-wrap">
