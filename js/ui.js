@@ -83,7 +83,7 @@ function renderTitleFlag() {
 }
 
 // ------------------------------------------------------------------
-// 게임 익히기 — 단계 목록(타이틀에서 바로 들어온다)
+// 첫 걸음 — 단계 목록(타이틀에서 바로 들어온다)
 // ------------------------------------------------------------------
 function renderCampaignList() {
   const list = document.getElementById('campaign-level-list');
@@ -173,7 +173,7 @@ function renderRules() {
     </div>
     <div class="rules-block">
       <h3>네 가지 놀이 방법</h3>
-      <p><b>게임 익히기</b> — 미션을 하나씩 풀며 규칙을 익혀요. 별을 모아 다음 단계를 열어요.<br>
+      <p><b>첫 걸음</b> — 미션을 하나씩 풀며 규칙을 익혀요. 별을 모아 다음 단계를 열어요.<br>
       <b>스무하루의 밤</b> — 2·8 독립선언부터 3월 1일 새벽까지, 이야기와 함께 스물한 밤을 버텨요.<br>
       <b>단속의 밤</b> — 낮마다 오는 단속을 피해 숨겨 둔 태극기를 지키며 여덟 밤을 보내요.<br>
       <b>자유 연습</b> — 3~5명이 AI나 친구와 함께 여덟 밤을 겨뤄요. 친구와는 한 기기를 돌려 가며 둬요.</p>
@@ -755,7 +755,7 @@ function renderStoryPanel(snap) {
       '</details>' : '');
 }
 
-// 게임 익히기 미션 카드: 별1 목표의 진행 · 별 기준 · 단계 안내
+// 첫 걸음 미션 카드: 별1 목표의 진행 · 별 기준 · 단계 안내
 function renderMission(g, snap) {
   const el = document.getElementById('mission');
   if (state.mode !== 'campaign') { el.hidden = true; return; }
