@@ -103,6 +103,9 @@
   #screen-title h1 { font-size: 26px; }
   #screen-title .maker { font-size: 12px; opacity: .6; margin: 10px 0 0; }
   #screen-title .menu { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  /* 기기끼리 함께하기(link.html, 시험판)로 가는 링크: 버튼과 같은 모양 */
+  #screen-title .menu-link { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 12px 16px; border: 2px dashed var(--ink); border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 16px; }
+  #screen-title .menu-link .beta { font-size: 11px; font-weight: 700; background: var(--tg-red); color: var(--hanji); border-radius: 6px; padding: 1px 6px; }
 
   /* ---------- 첫 걸음: 과정 처음 화면 ---------- */
   .tut-status { background: rgba(205,189,152,.35); border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
@@ -423,6 +426,7 @@
       <button data-nav="endless-start">스무하루의 밤</button>
       <button data-nav="crackdown-start">단속의 밤</button>
       <button data-nav="practice-setup">자유 연습</button>
+      <a class="menu-link" href="link.html">기기끼리 함께하기 <span class="beta">시험판</span></a>
       <button data-nav="rules">규칙 보기</button>
       <button class="ghost" data-nav="settings">설정</button>
     </div>
