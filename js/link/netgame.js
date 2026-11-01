@@ -18,7 +18,8 @@
 import { Engine } from '../engine.js';
 import { MultiGame } from '../multi.js';
 
-export const PROTOCOL = 1;
+// 엔진이 같은 시드로 같은 판을 만들어야 하므로, 엔진 동작이 바뀌면 올린다(2: 첫 순서 공정 섞기)
+export const PROTOCOL = 2;
 
 export class NetGame {
   /**
