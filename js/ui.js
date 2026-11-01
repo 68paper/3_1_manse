@@ -13,7 +13,9 @@ import {
   saveCrackdownResult
 } from './solo.js';
 import { MultiGame } from './multi.js';
-import { TUTORIAL_SCENES, TutorialGame } from './tutorial.js';
+import { TUTORIAL_SCENES, TutorialGame, sceneTitle, sceneSub, sceneCardCount } from './tutorial.js';
+// 글 파일(texts/*.md). 이 파일에는 첫 걸음 상태를 뜻하는 지역 변수 t가 많아 tx로 부른다
+import { loadTexts, t as tx, tText } from './texts.js';
 import { FirstRoll, rollDie } from './firstRoll.js';
 import { quickRulesHtml, ensureQuickRulesStyle } from './quickRules.js';
 import { CrackdownGame, makeCrackdownLevel, nightOrdinal, CRACKDOWN_CONFIG } from './crackdown.js';
@@ -22,7 +24,7 @@ import {
   taegeukgiFlag, trigramIcon, dieIcon, lanternIcon, pieceIcon
 } from './art.js';
 import { Sound } from './audio.js';
-import { PROLOGUE, NIGHT_STORIES, MARCH_FIRST, nightDate, latestStory } from './story.js';
+import { PROLOGUE, NIGHT_STORIES, MARCH_FIRST, nightDate, latestStory, buildStories } from './story.js';
 
 // 화면에 보이는 모둠 이름(규칙 보기와 같은 이름). 엔진의 TYPE_NAME은 판정용 설명이다.
 const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
@@ -93,7 +95,7 @@ function renderTitleFlag() {
 // 첫 걸음 — 하나로 이어지는 과정(js/tutorial.js). 기획: docs/첫걸음_개편_시나리오.md
 // ------------------------------------------------------------------
 function tutSceneLabel(scene) {
-  return scene.num != null ? '장면 ' + scene.num + ' · ' + scene.title : scene.title;
+  return scene.num != null ? '장면 ' + scene.num + ' · ' + sceneTitle(scene) : sceneTitle(scene);
 }
 
 // 진행 점: 지난 장면 · 지금 장면 · 남은 장면
@@ -109,9 +111,9 @@ function renderTutorialHome() {
   const total = TUTORIAL_SCENES.length;
   const last = total - 1;
   let status;
-  if (prog.done) status = '<span class="done-tag">마침</span>첫 걸음을 마쳤어요. 언제든 다시 볼 수 있어요.';
-  else if (prog.reached < 0) status = '보드게임 규칙을 장면 하나에 개념 하나씩, 직접 놓아 보며 익혀요. 8 - 12분쯤 걸려요.';
-  else status = '<b>' + (prog.reached + 1) + ' / ' + total + '</b> 장면을 마쳤어요.';
+  if (prog.done) status = '<span class="done-tag">마침</span>' + tx('home.done');
+  else if (prog.reached < 0) status = tx('home.new');
+  else status = tx('home.progress', { done: prog.reached + 1, total: total });
 
   let actions = '';
   if (prog.done) {
@@ -129,7 +131,7 @@ function renderTutorialHome() {
     const unlocked = prog.done || i <= prog.reached + 1;
     return '<button class="level-row' + (unlocked ? '' : ' locked') + '" data-tut-start="' + i + '" ' + (unlocked ? '' : 'disabled') + '>' +
       '<div class="num">' + (scene.num != null ? scene.num : '끝') + '</div>' +
-      '<div class="info"><div class="t">' + scene.title + '</div><div class="m">' + scene.sub + '</div></div>' +
+      '<div class="info"><div class="t">' + escapeHtml(sceneTitle(scene)) + '</div><div class="m">' + escapeHtml(sceneSub(scene)) + '</div></div>' +
       '<div class="mark">' + (i <= prog.reached ? '마침' : (unlocked ? '' : '🔒')) + '</div>' +
       '</button>';
   }).join('');
@@ -161,51 +163,46 @@ function renderTutorialCard() {
 
   if (t.view === 'summary') {
     const sum = scene.summary || {};
-    html = '<div class="tut-eyebrow">정리</div><h2>' + scene.title + '</h2>';
+    html = '<div class="tut-eyebrow">정리</div><h2>' + escapeHtml(sceneTitle(scene)) + '</h2>';
     if (scene.goal && state.game instanceof TutorialGame) {
       const g = state.game;
-      html += '<div class="tut-result">' + (g.goalMet ? '목표 달성!' : '조금 아쉬워요') + '</div>' +
+      html += '<div class="tut-result">' + tx(g.goalMet ? 'free.good.title' : 'free.bad.title') + '</div>' +
         '<p class="tut-text center">' + g.score + '점 · 모둠 ' + g.sceneCombos + '개 · 태극기 ' + g.flags + '장</p>' +
-        '<p class="tut-text">' + (g.goalMet ? '배운 것을 혼자서도 잘 써냈어요.' : '목표를 못 채워도 괜찮아요. 다시 해 보거나 이대로 마칠 수 있어요.') + '</p>';
+        '<p class="tut-text">' + tx(g.goalMet ? 'free.good' : 'free.bad') + '</p>';
     }
     if (sum.dice) html += '<div class="tut-dice">' + sum.dice.map(function (d) { return dieIcon(d[0], d[1], 52); }).join('') + '</div>';
-    if (sum.text) html += '<p class="tut-text">' + sum.text + '</p>';
+    if (scene.summary) html += '<div class="tut-text">' + tx(scene.id + '.summary') + '</div>';
     if (sum.extra) {
-      html += '<div class="tut-extra"><h3>' + sum.extra.title + '</h3><div class="tut-boards">' + sum.extra.boards.map(function (b) {
+      html += '<div class="tut-extra"><h3>' + tx(scene.id + '.extra.title') + '</h3><div class="tut-boards">' + sum.extra.boards.map(function (b, bi) {
         const board = [];
-        for (let i = 0; i < 9; i++) board.push(b.board[i] ? { color: b.board[i][0], value: b.board[i][1] } : null);
-        return '<div class="tut-board-row">' + miniBoard(board) + '<span>' + b.caption + '</span></div>';
+        for (let i = 0; i < 9; i++) board.push(b[i] ? { color: b[i][0], value: b[i][1] } : null);
+        return '<div class="tut-board-row">' + miniBoard(board) + '<span>' + tx(scene.id + '.extra.' + (bi + 1)) + '</span></div>';
       }).join('') + '</div></div>';
     }
     const nextLabel = scene.goal && state.game instanceof TutorialGame && !state.game.goalMet ? '이대로 마치기' : '다음 장면';
     actions = '<button class="primary" data-tut="summary-next">' + nextLabel + '</button>' +
       '<button class="ghost" data-tut="retry">다시 해 보기</button>';
   } else if (scene.kind === 'story') {
-    const lastCard = t.sub >= scene.cards.length - 1;
-    html = '<div class="tut-eyebrow">' + (scene.num != null ? '장면 ' + scene.num : '끝') + '</div><h2>' + scene.title + '</h2>' +
-      '<p class="tut-story">' + scene.cards[t.sub] + '</p>';
+    const lastCard = t.sub >= sceneCardCount(scene) - 1;
+    html = '<div class="tut-eyebrow">' + (scene.num != null ? '장면 ' + scene.num : '끝') + '</div><h2>' + escapeHtml(sceneTitle(scene)) + '</h2>' +
+      '<div class="tut-story">' + tx(scene.id + '.card.' + (t.sub + 1)) + '</div>';
     if (!lastCard) actions = '<button class="primary" data-tut="story-next">다음</button>';
     else if (isLast) actions = '<button class="primary" data-tut="end-title">타이틀로</button><button class="ghost" data-tut="end-home">첫 걸음 다시 보기</button>';
     else actions = '<button class="primary" data-tut="story-next">' + scene.button + '</button>';
   } else if (scene.kind === 'dice') {
     const colorsSeen = scene.dice.filter(function (d, i) { return !d.spy && t.seen[i]; }).length;
     const colorsTotal = scene.dice.filter(function (d) { return !d.spy; }).length;
-    const texts = {
-      colors: '주사위 하나하나가 그날 찾아온 사람이에요. 눌러 보세요. <b>색</b>은 어떤 사람들이 모였는지 알려 줘요. (' + colorsSeen + '/' + colorsTotal + ')',
-      order: '<b>눈</b>은 2부터 6까지, 순서일 뿐이에요. 누가 더 높은 사람이 아니에요.',
-      spy: '그런데 한 명이 이상해요. 눌러 보세요.',
-      spyInfo: '1은 색과 상관없이 모두 <b>밀정</b>이에요. 밀정은 어떤 모둠에도 들어갈 수 없어요.'
-    };
-    html = '<div class="tut-eyebrow">장면 ' + scene.num + '</div><h2>' + scene.title + '</h2>' +
-      '<p class="tut-text">' + texts[t.stage] + '</p>' +
+    // 단계별 안내 글: texts/tutorial.md의 people.colors · people.order · people.spy · people.spyInfo
+    html = '<div class="tut-eyebrow">장면 ' + scene.num + '</div><h2>' + escapeHtml(sceneTitle(scene)) + '</h2>' +
+      '<div class="tut-text">' + tx('people.' + t.stage, { seen: colorsSeen, total: colorsTotal }) + '</div>' +
       '<div class="tut-dice">' + scene.dice.map(function (d, i) {
         return '<button data-tut-die="' + i + '" class="' + (t.person === i ? 'cur' : (t.seen[i] ? 'seen' : '')) + '" aria-label="' + (d.spy ? '밀정' : d.name) + '">' + dieIcon(d.color, d.value, 58) + '</button>';
       }).join('') + '</div>';
-    let person = '주사위를 눌러 보세요.';
+    let person = tx('people.idle');
     if (t.person != null) {
       const d = scene.dice[t.person];
-      if (d.spy && t.stage === 'colors') person = '이 사람은 조금 뒤에 알아봐요. 먼저 네 색의 사람들을 만나 보세요.';
-      else if (d.spy) person = '<span class="nm">밀정</span><br>검은 중절모와 외투 차림으로 사람들 사이에 숨어 지켜보는 감시자예요.';
+      if (d.spy && t.stage === 'colors') person = tx('people.spyEarly');
+      else if (d.spy) person = '<span class="nm">밀정</span><br>' + tx('people.spyDesc');
       else person = '<span class="nm">' + d.name + '</span> · 눈 ' + d.value + '<br>' + d.group;
     }
     html += '<div class="tut-person">' + person + '</div>';
@@ -257,7 +254,7 @@ function onTutorialAction(action) {
   if (action === 'retry') { startTutorialScene(t.index); return; }
   if (action === 'story-next') {
     const scene = TUTORIAL_SCENES[t.index];
-    if (t.sub < scene.cards.length - 1) { t.sub++; renderTutorialCard(); return; }
+    if (t.sub < sceneCardCount(scene) - 1) { t.sub++; renderTutorialCard(); return; }
     saveTutorialSceneDone(t.index, false);
     startTutorialScene(t.index + 1);
     return;
@@ -309,88 +306,26 @@ const DICE_PEOPLE = [
 // ------------------------------------------------------------------
 // 규칙 보기
 // ------------------------------------------------------------------
+// 글은 texts/rules.md(rules.*)에 있다. 위에서부터 한 칸씩, 주사위 속 사람들만 아래에 그림으로 붙인다
+const RULES_SECTIONS = ['rules.intro', 'rules.dice', 'rules.night', 'rules.place', 'rules.combos', 'rules.after',
+  'rules.scatter', 'rules.score', 'rules.endless', 'rules.modes', 'rules.crackdown', 'rules.people'];
+
 function renderRules() {
   const el = document.getElementById('rules-content');
-  const dice = function (color, value) { return dieIcon(color, value, 34); };
+  const f = CRACKDOWN_CONFIG.FLAGS_PER_COMBO;
+  const vars = {
+    start_flags: CRACKDOWN_CONFIG.START_FLAGS, same: f.same, consec: f.consec, color: f.color,
+    star1: CRACKDOWN_CONFIG.STARS[0], star2: CRACKDOWN_CONFIG.STARS[1], star3: CRACKDOWN_CONFIG.STARS[2]
+  };
   const peopleHtml = DICE_PEOPLE.map(function (g) {
     return '<h4 class="people-group">' + g.group + '</h4><div class="people-row">' + g.names.map(function (n, i) {
       return '<figure>' + dieIcon(g.color, i + 2, 44) + '<figcaption>' + n + '</figcaption></figure>';
     }).join('') + '</div>';
   }).join('') +
-    '<div class="combo-example"><div class="dice">' + dieIcon('black', 1, 44) + '</div><div><b>모든 색의 1 — 밀정</b><br>검은 중절모와 외투 차림으로 사람들 사이에 숨어 지켜보는 감시자예요.</div></div>';
-  el.innerHTML = `
-    <div class="rules-block">
-      <h3>게임 소개</h3>
-      <p>여러분은 한 지방에서 삼일운동을 준비하는 <b>조직가</b>예요. 밤마다 찾아오는 사람들에게 알맞은 자리를 찾아 주세요. 뜻이 맞는 세 사람이 한 줄에 서면 <b>모둠</b>이 되고, 모둠은 <b>태극기 조각</b>을 찍어요. 여덟 밤 동안 조각을 모아 태극기를 완성하며 3월 1일 아침을 향해 나아가요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>사람 주사위</h3>
-      <p>주사위 하나하나가 그날 찾아온 <b>사람</b>이에요. <b>색</b>은 어떤 사람들이 모였는지를, <b>눈</b>은 그 사람이 찍어 낼 수 있는 조각을 뜻해요.</p>
-      <p class="muted">흰색 마을과 장터 사람들 · 검정 도시의 일하는 사람들 · 빨강 학생과 젊은이들 · 파랑 신앙의 사람들<br>
-      눈 2 태극 · 3 건 · 4 리 · 5 감 · 6 곤 — 눈의 크고 작음은 순서일 뿐, 누가 더 높거나 강한 사람이 아니에요.</p>
-      <div class="combo-example"><div class="dice">${dice('white', 1)}${dice('red', 1)}</div><div><b>1은 밀정</b>이에요. 사람들 사이에 섞여 든 감시자라서 어떤 모둠에도 들어갈 수 없어요.</div></div>
-    </div>
-    <div class="rules-block">
-      <h3>한 밤의 흐름</h3>
-      <p>밤마다 주머니에서 주사위를 꺼내 굴려 <b>광장</b>에 둬요. 광장에서 주사위 <b>1개</b>를 골라 내 판에 놓고, 모둠이나 흩어짐을 처리한 뒤 <b>한 번 더</b> 골라 놓아요.</p>
-      <p><b>가져간 주사위는 반드시 놓아야 해요.</b> 찾아온 사람을 돌려보내지 않아요. 밀정이 섞여 있어도, 흩어질 줄 알면서도 받아들여요. 여덟 번째 밤이 끝나면(등잔이 다 꺼지면) 3월 1일 아침이 밝아요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>자리 찾아 주기</h3>
-      <p>판이 비어 있으면 어느 칸에든, 그 뒤로는 이미 놓인 주사위의 <b>상하좌우 빈칸</b>에만 놓을 수 있어요(대각선은 안 돼요). 밀정 옆 빈칸에도 놓을 수 있어요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>세 가지 모둠</h3>
-      <p>가로나 세로 한 줄이 주사위 3개로 가득 차는 순간, 모둠이 되는지 살펴봐요. (대각선은 해당 없음)</p>
-      <div class="combo-example"><div class="dice">${dice('red', 4)}${dice('black', 4)}${dice('white', 4)}</div><div><b>한뜻</b> — 눈이 모두 같고 색이 모두 다름 · 내 판의 밀정 1개 쫓아내기(+1점) + 원하는 조각 2개</div></div>
-      <div class="combo-example"><div class="dice">${dice('blue', 3)}${dice('blue', 4)}${dice('blue', 5)}</div><div><b>연락망</b> — 색이 모두 같고 눈이 이어짐(2·3·4 / 3·4·5 / 4·5·6) · 원하는 조각 2개</div></div>
-      <div class="combo-example"><div class="dice">${dice('white', 2)}${dice('white', 5)}${dice('white', 6)}</div><div><b>한동네</b> — 색이 모두 같고 눈이 모두 다름(이어지지 않음) · 원하는 조각 1개</div></div>
-      <p class="muted">밀정이 하나라도 있는 줄은 모둠이 될 수 없어요. 같은 색이고 눈이 이어지면 연락망만 받아요. 조각은 태극·건·리·감·곤 중 무엇이든 고를 수 있고, 같은 조각을 여러 개 골라도 돼요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>모둠을 이루면</h3>
-      <ol class="rules-steps">
-        <li><b>한 사람을 남겨요.</b> 모둠의 세 주사위 중 1개는 판에 남고 2개는 주머니로 돌아가요. 남은 사람이 다음 모둠의 씨앗이에요.</li>
-        <li><b>밀정을 쫓아내요.</b> (한뜻만) 내 판 어디에 있든 밀정 하나를 골라 돌려보내고 <b>1점</b>을 받아요. 판에 밀정이 없으면 건너뛰어요.</li>
-        <li><b>조각을 받아요.</b> 조각 하나에 1점이에요.</li>
-      </ol>
-      <p><b>교차 완성</b> — 주사위 하나로 가로줄과 세로줄이 동시에 모둠이 되면, 방금 놓은 주사위가 남고 나머지 4개는 돌아가요. 두 모둠의 보상을 모두 받고, 받는 순서는 직접 정해요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>흩어짐과 감시 철수</h3>
-      <div class="combo-example"><div class="dice">${dice('blue', 2)}${dice('black', 1)}${dice('white', 6)}</div><div>가득 찼는데 모둠이 아닌 줄은 <b>흩어져요</b>. 밀정은 판에 남고 나머지만 주머니로 돌아가요.</div></div>
-      <p>밀정 셋으로만 찬 줄은 <b>감시 철수</b>로 셋 모두 돌아가요. 감시 철수로 빠진 밀정에는 점수가 없어요.</p>
-      <p class="muted">처리 순서: 모둠 → 흩어짐 → 감시 철수. 모둠에서 남긴 주사위가 걸친 다른 줄이 가득 차 있으면, 그 줄이 흩어지며 남긴 주사위도 함께 돌아가요. 남길 사람을 고를 때 살펴보세요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>점수와 태극기</h3>
-      <p>점수 = <b>찍은 조각 수 + 완성한 태극기 장수 + 밀정을 쫓아낸 횟수</b>. 태극·건·리·감·곤 다섯 자리가 모두 찍히면 태극기 한 장이 완성되고, 그때 1점을 더 받아요.</p>
-      <p class="muted">예) 태극 2 · 건 1 · 리 1 · 감 1 · 곤 1을 모으고 밀정을 한 번 쫓아냈다면 6 + 1 + 1 = 8점</p>
-      <p><b>스무하루의 밤</b>은 1919년 2월 8일부터 2월 28일까지 스물한 밤이에요. 밤마다 그 무렵 3·1 운동을 준비하던 이야기가 펼쳐지고, 끝까지 버티면 3월 1일 새벽을 맞아요. 그 전에 가로 세 줄과 세로 세 줄 모두에 밀정이 자리 잡으면 <b>판이 막혀</b> 끝나요. 언제든 종료 버튼으로 그때까지의 점수를 기록하고 마칠 수도 있어요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>네 가지 놀이 방법</h3>
-      <p><b>첫 걸음</b> — 장면 하나에 개념 하나씩, 직접 놓아 보며 규칙을 익혀요.<br>
-      <b>스무하루의 밤</b> — 2·8 독립선언부터 3월 1일 새벽까지, 이야기와 함께 스물한 밤을 버텨요.<br>
-      <b>단속의 밤</b> — 낮마다 오는 단속을 피해 숨겨 둔 태극기를 지키며 여덟 밤을 보내요.<br>
-      <b>자유 연습</b> — 3~5명이 AI나 친구와 함께 여덟 밤을 겨뤄요. 친구와는 한 기기를 돌려 가며 둬요.</p>
-      <p class="muted">여럿이 할 때는 밤마다 광장에 (인원×2+2)개를 꺼내요. 첫 밤에는 각자 주사위를 굴려 눈이 큰 사람부터 고르고(밀정은 가장 작은 눈, 같으면 다시 굴려요), 그다음 밤부터는 점수판 「3월 1일로 가는 길」에서 가장 뒤에 있는 사람부터 차례로 고르고, 같은 칸에 말이 쌓여 있으면 아래에 깔린 말이 먼저 골라요. 순서는 밤을 시작할 때 정해져 밤 도중에는 바뀌지 않아요. 여덟 밤 뒤 가장 앞선 사람이 이기고, 같은 칸이면 위에 올라선 말(나중에 도착한 말)이 앞서요.</p>
-    </div>
-    <div class="rules-block">
-      <h3>단속의 밤</h3>
-      <p>조각 대신 <b>숨겨 둔 태극기</b>를 세요. 처음에 ${CRACKDOWN_CONFIG.START_FLAGS}장을 숨겨 두고 시작해요.</p>
-      <p>한 밤은 <b>손 네 번</b>이에요. 손마다 주머니에서 주사위 4개를 꺼내 하나를 놓고, 남은 셋 중 하나를 더 놓아요. 나머지 둘은 주머니로 돌아가요. 놓기 · 모둠 · 흩어짐 · 감시 철수는 기본 규칙 그대로예요.</p>
-      <p>한뜻 · 연락망은 <b>+2장</b>, 한동네는 <b>+1장</b>이에요(교차 완성이면 둘 다). 손에서 밀정을 놓으면 <b>1장 압수</b>돼요.</p>
-      <p>밤마다 그날 낮의 <b>단속 카드</b>가 미리 공개돼요. 밤이 끝나면 카드에 표시된 칸을 하나씩 살펴서, <b>비어 있으면 밀정이 들어오고 1장 압수</b>, 사람이 서 있으면 지켜 내요. 들어온 밀정 때문에 줄이 가득 차면 흩어짐 · 감시 철수도 그대로 일어나요.</p>
-      <p>단속은 3월 1일이 다가올수록 거세져요. 처음 세 번은 한 칸, 다음 세 번은 두 칸, 마지막 낮에는 세 칸을 노려요. 카드의 이야기는 그 무렵 실제로 있었던 일의 순서를 따라가요.</p>
-      <p class="muted">숨겨 둔 태극기가 0장이 되는 순간 끝나요. 여덟째 밤 뒤에는 단속 없이 3월 1일 아침이 밝고, 손에 든 장 수로 별을 받아요(★${CRACKDOWN_CONFIG.STARS[0]}장 ★★${CRACKDOWN_CONFIG.STARS[1]}장 ★★★${CRACKDOWN_CONFIG.STARS[2]}장).</p>
-    </div>
-    <div class="rules-block">
-      <h3>주사위 속 사람들</h3>
-      <p class="muted">그날을 준비한 사람들은 저마다 처지가 달랐어요. 마을에서, 도시에서, 학교에서, 예배당과 절에서 사람들이 스스로 찾아왔어요.</p>
-      ${peopleHtml}
-    </div>
-  `;
+    '<div class="combo-example"><div class="dice">' + dieIcon('black', 1, 44) + '</div><div>' + tx('rules.people.spy') + '</div></div>';
+  el.innerHTML = RULES_SECTIONS.map(function (key) {
+    return '<div class="rules-block">' + tx(key, vars) + (key === 'rules.people' ? peopleHtml : '') + '</div>';
+  }).join('');
 }
 
 // ------------------------------------------------------------------
@@ -1529,7 +1464,14 @@ function wireStaticEvents() {
 
 async function loadCrackdownCards() {
   const res = await fetch('data/crackdown.json');
-  state.crackdownCards = await res.json();
+  const cards = await res.json();
+  // 카드의 이름 · 시기 · 배경 글은 texts/crackdown.md에 있다
+  cards.stories.forEach(function (s) {
+    s.name = tText('cd.' + s.id + '.name');
+    s.period = tText('cd.' + s.id + '.period');
+    s.background = tText('cd.' + s.id + '.background');
+  });
+  state.crackdownCards = cards;
 }
 
 // 단속의 밤: 카드를 아직 못 불러왔으면 한 번 더 시도한다
@@ -1551,8 +1493,11 @@ async function init() {
   requestPersistentStorage();
   applySoundSettings();
   renderTitleFlag();
-  wireStaticEvents();
   showScreen('title');
+  // 게임 속 글(texts/*.md)을 먼저 읽는다. 읽기 전에는 버튼을 눌러도 반응하지 않게, 다 읽은 뒤에 입력을 연결한다
+  await loadTexts();
+  buildStories();
+  wireStaticEvents();
   try { await loadCrackdownCards(); } catch (e) { /* 단속의 밤을 시작할 때 다시 시도 */ }
   registerServiceWorker();
 }

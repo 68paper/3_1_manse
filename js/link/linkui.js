@@ -14,6 +14,7 @@ import { Engine } from '../engine.js';
 import { dieIcon, pieceIcon } from '../art.js';
 import { nightDate } from '../story.js';
 import { quickRulesHtml, ensureQuickRulesStyle } from '../quickRules.js';
+import { loadTexts, fillTextSlots } from '../texts.js';
 import { randomSeed } from '../levelSetup.js';
 import { Sound } from '../audio.js';
 import { getSettings } from '../solo.js';
@@ -672,6 +673,8 @@ function registerServiceWorker() {
 
 wire();
 registerServiceWorker();
+// 안내 글(texts/link.md)과 규칙 한눈에(texts/rules.md)를 읽어 data-text 자리를 채운다
+loadTexts(['link', 'rules']).then(function () { fillTextSlots(); });
 // 소리: 브라우저는 첫 터치 뒤에만 소리를 낼 수 있다. 화면이 가려지면 배경음을 멈춘다
 applySoundSettings();
 document.addEventListener('pointerdown', function () { Sound.unlock(); }, { capture: true });
