@@ -83,6 +83,29 @@
   .lobby-list .seat .st { font-size: 12px; color: #3f7d4e; }
   .lobby-list .seat.wait .st { color: var(--ink); opacity: .6; }
   .invite-title { font-family: var(--font-title); font-weight: 800; font-size: 16px; margin-top: 4px; }
+  .seg { display: flex; border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  .seg button { flex: 1; border: none; border-radius: 0; background: transparent; padding: 8px 4px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.3; }
+  .seg button + button { border-left: 2px solid var(--ink); }
+  .seg button.on { background: var(--ink); color: var(--hanji); }
+  .seg button small { font-size: 11px; opacity: .75; }
+  /* 괘 표시: 모은 조각마다 괘 그림 + 개수 */
+  .pcs { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; vertical-align: middle; }
+  .pc { display: inline-flex; align-items: center; gap: 2px; }
+  .pc svg { display: block; }
+  .pc b { font-family: var(--font-title); font-weight: 800; font-size: 13px; }
+  .pc.zero { opacity: .45; }
+  .pieces { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .board-pcs { margin-top: 3px; }
+  .board-pcs .pcs { gap: 1px 4px; }
+  .board-pcs .pc b { font-size: 11px; }
+  .opts button { display: inline-flex; align-items: center; gap: 4px; }
+  /* 끝: 순위표 */
+  .result { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .result th { font-size: 12px; font-weight: 700; opacity: .65; text-align: left; padding: 4px 6px; border-bottom: 1.5px solid rgba(42,34,27,.3); }
+  .result td { padding: 7px 6px; border-bottom: 1px solid rgba(42,34,27,.15); }
+  .result td.n { text-align: right; font-family: var(--font-title); font-weight: 800; }
+  .result tr.win td { background: rgba(200,49,47,.08); }
+  .result .rk { font-family: var(--font-title); font-weight: 800; width: 40px; white-space: nowrap; }
   .name-field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700; }
   .name-field input { font: inherit; font-weight: 400; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: 10px; background: #fffaf0; color: var(--ink); }
   #log-text { min-height: 180px; font-size: 11px; }
@@ -169,6 +192,11 @@
     <div class="card" id="host-lobby">
       <p><b>모인 사람</b> <span id="lobby-count"></span></p>
       <div id="lobby-list" class="lobby-list"></div>
+      <p><b>게임 길이</b></p>
+      <div class="seg" id="nights-seg">
+        <button data-nights="8">여덟 밤</button>
+        <button data-nights="21">스무하루 밤<small>2월 8일 - 28일</small></button>
+      </div>
       <div class="row" id="lobby-actions">
         <button id="btn-invite">한 명 더 받기</button>
         <button class="primary" id="btn-start" disabled>시작하기</button>

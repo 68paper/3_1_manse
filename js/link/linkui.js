@@ -8,10 +8,11 @@
  */
 import { PeerLink } from './rtc.js';
 import { drawQR, scanQR } from './qr.js';
-import { NetGame, MAX_PLAYERS, cleanName } from './netgame.js';
+import { NetGame, MAX_PLAYERS, NIGHT_OPTIONS, cleanName } from './netgame.js';
 import { ConnLog, deviceSummary } from './connlog.js';
 import { Engine } from '../engine.js';
-import { dieIcon } from '../art.js';
+import { dieIcon, pieceIcon } from '../art.js';
+import { nightDate } from '../story.js';
 import { randomSeed } from '../levelSetup.js';
 import { Sound } from '../audio.js';
 import { getSettings } from '../solo.js';
@@ -20,6 +21,7 @@ const PIECE_NAME = { taegeuk: '태극', geon: '건', ri: '리', gam: '감', gon:
 const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
 const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
 const NAME_KEY = 'manse-eve:v1:linkName';
+const NIGHTS_KEY = 'manse-eve:v1:linkNights';
 
 const state = {
   net: null,
@@ -102,6 +104,11 @@ function closeCamera() {
 // ---- 방장: 참가자를 한 사람씩 받기 ----
 function makeNet(isHost) {
   const net = new NetGame(isHost, myName());
+  if (isHost) {
+    let saved = 8;
+    try { saved = Number(localStorage.getItem(NIGHTS_KEY)) || 8; } catch (e) { /* 무시 */ }
+    net.nights = NIGHT_OPTIONS.indexOf(saved) >= 0 ? saved : 8;
+  }
   state.net = net;
   state.selectedPi = null;
   state.heard = null;
@@ -227,6 +234,7 @@ function renderLobby() {
   $('host-invite').hidden = !state.invite;
   $('host-lobby').hidden = state.inviteSeat != null;
   $('btn-invite').hidden = !!state.invite || n >= MAX_PLAYERS;
+  document.querySelectorAll('#nights-seg [data-nights]').forEach(function (b) { b.classList.toggle('on', Number(b.dataset.nights) === net.nights); });
   $('btn-start').disabled = n < 2;
   $('btn-start').textContent = n < 2 ? '참가자가 오면 시작할 수 있어요' : n + '명으로 시작하기';
 }
@@ -238,7 +246,7 @@ function hostStart() {
   notice(null);
   show('step-play');
   setStatus();
-  ConnLog.add('나', net.gatheredCount + '명으로 시작: ' + net.lobbyNamesNow().join(', '));
+  ConnLog.add('나', net.gatheredCount + '명으로 시작(' + nightsName(net.nights) + '): ' + net.lobbyNamesNow().join(', '));
   net.start(randomSeed());
 }
 
@@ -292,6 +300,21 @@ function setStatus() {
   $('status-text').textContent = off ? '방장과 연결 끊김' : '연결됨 · 나는 ' + me;
 }
 
+function nightsName(n) { return n === 21 ? '스무하루 밤' : '여덟 밤'; }
+
+// 밤 표시: 스무하루 밤은 날짜(2월 8일 - 28일), 여덟 밤은 몇째 밤
+function nightLabel(round, nights) {
+  return nights === 21 ? nightDate(round) + ' 밤 · ' + round + '/21' : round + ' / 8번째 밤';
+}
+
+// 모은 조각: 괘 그림 + 개수(태극기는 그리지 않는다)
+function piecesHtml(parts, size) {
+  return '<span class="pcs">' + PIECE_ORDER.map(function (k) {
+    const n = parts[k] || 0;
+    return '<span class="pc' + (n ? '' : ' zero') + '" title="' + PIECE_NAME[k] + ' ' + n + '개">' + pieceIcon(k, size, n > 0) + '<b>' + n + '</b></span>';
+  }).join('') + '</span>';
+}
+
 function boardHtml(board, cls, opts) {
   opts = opts || {};
   let html = '<div class="board ' + cls + '">';
@@ -315,7 +338,7 @@ function renderPlay() {
     const count = net ? net.lobbyCount : 1;
     $('night').textContent = '모이는 중';
     body.innerHTML = (net && net.hostGone ? guestLostHtml() :
-      '<div class="turn wait">방장이 <b>시작하기</b>를 누르기를 기다리는 중… · 지금 ' + count + '명 모였어요(최대 ' + MAX_PLAYERS + '명).</div>' +
+      '<div class="turn wait">방장이 <b>시작하기</b>를 누르기를 기다리는 중… · 지금 ' + count + '명 모였어요(최대 ' + MAX_PLAYERS + '명) · 게임 길이 ' + nightsName(net ? net.nights : 8) + '</div>' +
       (net && net.lobbyNames.length ? '<div class="lobby-list">' + net.lobbyNames.map(function (nm) { return '<div class="seat"><span class="nm">' + esc(nm) + '</span></div>'; }).join('') + '</div>' : ''));
     return;
   }
@@ -328,13 +351,13 @@ function renderPlay() {
   const live = online();
   const myTurn = live && net.isMyTurn && !net.desync;
   const snap = myTurn ? game.snapshot() : null;
-  $('night').textContent = g.done ? '끝' : g.round + ' / 8번째 밤';
+  $('night').textContent = g.done ? '끝' : nightLabel(g.round, net.nights);
 
   // 차례 안내
   let turn, phaseText = '';
   if (g.done) {
     const st = game.standings();
-    turn = '<b>여덟 밤이 지났어요.</b> ' + esc(st[0].name) + ' 승리 · ' + st.map(function (p, i) { return (i + 1) + '위 ' + esc(p.name) + ' ' + p.score + '점'; }).join(' · ') +
+    turn = '<b>' + (net.nights === 21 ? '스물한 밤이 지나 3월 1일 아침이 밝았어요.' : '여덟 밤이 지났어요.') + '</b> ' + esc(st[0].name) + ' 승리!' +
       (st.length > 1 && st[0].score === st[1].score ? ' (같은 점수면 나중에 그 점수에 올라선 사람이 앞서요)' : '');
   } else if (myTurn) {
     const ph = g.phase;
@@ -375,7 +398,7 @@ function renderPlay() {
 
   let choices = '';
   if (myTurn && g.phase === 'combo_reward') {
-    choices = snap.rewardOptions.map(function (k) { return '<button data-reward="' + k + '">' + PIECE_NAME[k] + ' (' + me.parts[k] + ')</button>'; }).join('');
+    choices = snap.rewardOptions.map(function (k) { return '<button data-reward="' + k + '">' + pieceIcon(k, 22, true) + PIECE_NAME[k] + ' (' + me.parts[k] + ')</button>'; }).join('');
   } else if (myTurn && g.phase === 'combo_order') {
     choices = snap.comboOrderOptions.map(function (o) { return '<button data-order="' + o.idx + '">' + COMBO_NAME[o.type] + '</button>'; }).join('');
   }
@@ -383,7 +406,8 @@ function renderPlay() {
   // 다른 사람들의 판: 둘이면 옆에, 셋 이상이면 내 판 아래에 줄지어
   const otherBoard = function (p, cls) {
     return '<div class="board-col' + (cls ? ' ' + cls : '') + '"><div class="board-label">' + esc(p.name) + ' · ' + p.score + '점</div>' +
-      boardHtml(p.board, 'theirs', { size: 30, pulse: net.lastSeat === p.id ? net.lastCell : null }) + '</div>';
+      boardHtml(p.board, 'theirs', { size: 30, pulse: net.lastSeat === p.id ? net.lastCell : null }) +
+      '<div class="board-pcs">' + piecesHtml(p.parts, 16) + '</div></div>';
   };
   let boards;
   if (n === 2) {
@@ -403,9 +427,9 @@ function renderPlay() {
     boards +
     (g.done ? '' : '<div class="pool">' + pool + '</div>') +
     (choices ? '<div class="opts">' + choices + '</div>' : '') +
-    '<div class="pieces">내 조각 ' + PIECE_ORDER.map(function (k) { return PIECE_NAME[k] + ' ' + me.parts[k]; }).join(' · ') + ' · 태극기 ' + Engine.flagsOf(me) + '장</div>' +
+    (g.done ? resultHtml(game) : '<div class="pieces">내 조각 ' + piecesHtml(me.parts, 24) + '</div>') +
     (canRestart ? '<div class="row"><button class="primary" id="btn-again">' + (net.gatheredCount >= 2 ? net.gatheredCount + '명으로 새 판' : '새 판(사람이 더 필요해요)') + '</button>' +
-      (net.gatheredCount < MAX_PLAYERS ? '<button id="btn-more">사람 더 받기</button>' : '') + '</div>' : '') +
+      '<button id="btn-more">사람 · 길이 바꾸기</button></div>' : '') +
     (g.done && !net.isHost && live ? '<p class="muted" style="text-align:center">방장이 새 판을 시작할 수 있어요.</p>' : '') +
     '<p class="muted" style="text-align:center">시험판 · ' + n + '명 · 판 확인 번호 ' + net.seq + (net.desync ? ' · 판이 어긋났어요' : '') + '</p>';
 }
@@ -438,6 +462,20 @@ function renderRoll() {
     '<div class="stack">' + rows + '</div>' +
     (net.myRollNeeded && live ? '<button class="primary" id="btn-roll">' + (r.history[net.mySeat].length ? '다시 굴리기' : '주사위 굴리기') + '</button>' : '') +
     (canRestart ? '<button id="btn-again">' + (net.gatheredCount >= 2 ? '남은 ' + net.gatheredCount + '명으로 다시 시작' : '새 판(사람이 더 필요해요)') + '</button>' : '');
+}
+
+// 끝: 순위 · 점수 · 완성한 태극기 장수 · 모은 괘
+function resultHtml(game) {
+  const st = game.standings();
+  const parts = {};
+  game.g.players.forEach(function (p) { parts[p.id] = p.parts; });
+  return '<table class="result"><tr><th></th><th>이름</th><th>점수</th><th>태극기</th></tr>' +
+    st.map(function (p, i) {
+      return '<tr class="' + (i === 0 ? 'win' : '') + '"><td class="rk">' + (i + 1) + '위</td>' +
+        '<td>' + esc(p.name) + (p.id === state.net.mySeat ? ' (나)' : '') + '<div class="board-pcs">' + piecesHtml(parts[p.id], 16) + '</div></td>' +
+        '<td class="n">' + p.score + '점</td><td class="n">' + p.flags + '장</td></tr>';
+    }).join('') + '</table>' +
+    '<p class="muted" style="text-align:center">점수 = 조각 수 + 완성한 태극기 장수 + 쫓아낸 밀정 수</p>';
 }
 
 // 방장: 끊긴 자리마다 [다시 받기]
@@ -538,7 +576,8 @@ function onPlayClick(e) {
     net.start(randomSeed());
     return;
   }
-  if (e.target.closest('#btn-more')) { startHost(); if (!state.invite) newInvite(); return; }
+  // 모이기 화면으로: 사람을 더 받거나(한 명 더 받기) 게임 길이를 바꾼 뒤 시작
+  if (e.target.closest('#btn-more')) { startHost(); return; }
   const rd = e.target.closest('[data-readmit]');
   if (rd) { startReadmit(Number(rd.dataset.readmit)); return; }
   if (e.target.closest('#btn-rejoin')) { startGuest(); return; }
@@ -578,6 +617,15 @@ function wire() {
   $('btn-invite').addEventListener('click', newInvite);
   $('btn-start').addEventListener('click', hostStart);
   $('btn-invite-cancel').addEventListener('click', cancelInvite);
+  $('nights-seg').addEventListener('click', function (e) {
+    const b = e.target.closest('[data-nights]');
+    if (!b || !state.net) return;
+    const n = Number(b.dataset.nights);
+    try { localStorage.setItem(NIGHTS_KEY, String(n)); } catch (err) { /* 무시 */ }
+    Sound.play('tap');
+    state.net.setNights(n);
+    renderLobby();
+  });
   $('btn-log-copy').addEventListener('click', function () { $('log-text').value = ConnLog.text(); copyText('log-text'); });
   $('btn-log-clear').addEventListener('click', function () { if (confirm('연결 기록을 지울까요?')) ConnLog.clear(); });
   $('log-panel').addEventListener('toggle', renderLog);

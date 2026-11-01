@@ -115,7 +115,15 @@ export class PeerLink {
     } catch (e) { /* 통계를 못 읽어도 연결에는 상관없음 */ }
   }
 
-  on(name, fn) { (this.handlers[name] = this.handlers[name] || []).push(fn); return this; }
+  on(name, fn) {
+    (this.handlers[name] = this.handlers[name] || []).push(fn);
+    // 받는 쪽이 붙기 전에 온 말은 모아 두었다가 이때 차례대로 건넨다(연결 직후 첫 말이 사라지지 않게)
+    if (name === 'message' && this.pending && this.pending.length) {
+      const queued = this.pending; this.pending = null;
+      queued.forEach(function (obj) { fn(obj); });
+    }
+    return this;
+  }
   _emit(name, arg) { (this.handlers[name] || []).forEach(function (fn) { fn(arg); }); }
   _close(reason) {
     if (this.closed) return;
@@ -134,6 +142,7 @@ export class PeerLink {
     ch.addEventListener('message', function (e) {
       let obj;
       try { obj = JSON.parse(e.data); } catch (err) { return; }
+      if (!(self.handlers.message && self.handlers.message.length)) { (self.pending = self.pending || []).push(obj); return; }
       self._emit('message', obj);
     });
   }

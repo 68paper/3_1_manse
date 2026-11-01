@@ -8,12 +8,14 @@
  * 참가자끼리는 직접 잇지 않는다. 방장이 판정의 기준이고 모든 소식을 전해 준다.
  *
  *   - 모이기: 참가자는 연결되자마자 { type: 'hello', name }으로 닉네임을 알리고,
- *     방장은 { type: 'lobby', v, count, names }로 지금 모인 사람을 알린다.
+ *     방장은 { type: 'lobby', v, count, names, nights, you }로 지금 모인 사람과 게임 길이를 알린다.
+ *     you는 방장이 알고 있는 그 참가자의 이름이다. 다르면 참가자가 hello를 다시 보낸다.
  *   - 순서 정하기: 방장이 시작하면 자리를 정해(방장 0, 연결된 순서대로 1, 2 …) 참가자마다
- *     { type: 'roll-begin', v, names, seat }를 보낸다. 굴리기는 방장이 대신 굴려
+ *     { type: 'roll-begin', v, names, seat, nights }를 보낸다. 굴리기는 방장이 대신 굴려
  *     { type: 'roll', seat, die }를 모두에게 알린다(참가자는 { type: 'roll-intent' }만 보낸다).
  *     같은 눈이면 그 사람들만 다시 굴린다(js/firstRoll.js).
- *   - 시작: 순서가 정해지면 { type: 'start', v, seed, names, firstOrder }.
+ *   - 시작: 순서가 정해지면 { type: 'start', v, seed, names, firstOrder, nights }.
+ *     게임 길이(nights)는 여덟 밤(8) 또는 스무하루 밤(21). 방장이 모이는 동안 고른다.
  *   - 방장 차례: 방장이 행동을 적용하고 { type: 'act', seq, a, hash }를 모두에게 보낸다.
  *   - 참가자 차례: 참가자는 { type: 'intent', a }만 보내고, 방장이 그 사람 차례인지 · 규칙에
  *     맞는지 확인해 적용한 뒤 'act'로 모두에게 돌려준다. 참가자는 'act'를 받았을 때만 적용한다.
@@ -21,7 +23,7 @@
  *   - 나감: 판 도중 참가자 연결이 끊기면 방장이 { type: 'left', seat }를 알린다.
  *     그 사람 차례가 오면 판이 멈추고, 방장이 남은 사람끼리 새 판을 시작할 수 있다.
  *   - 다시 들어오기: 방장이 끊긴 자리를 새 연결로 다시 받으면(readmit) 그 사람에게
- *     { type: 'resume', v, names, seat, seed, firstOrder, log, rolls, hash }를 보낸다.
+ *     { type: 'resume', v, names, seat, nights, seed, firstOrder, log, rolls, hash }를 보낸다.
  *     방장은 시작부터의 행동(log)과 순서 정하기 굴림(rolls)을 모두 적어 두므로, 참가자는
  *     같은 시드로 처음부터 다시 둬서 같은 판을 만든다. 다른 사람들에게는 { type: 'back', seat }.
  *
@@ -35,8 +37,11 @@ import { FirstRoll, rollDie } from '../firstRoll.js';
 
 // 엔진이 같은 시드로 같은 판을 만들어야 하므로, 엔진 동작이나 주고받는 말이 바뀌면 올린다
 // (2: 첫 순서 공정 섞기, 3: 주사위 굴려 순서 정하기, 4: 2 - 5명 · 모이기 · 자리 번호,
-//  5: 닉네임 · 다시 들어오기)
-export const PROTOCOL = 5;
+//  5: 닉네임 · 다시 들어오기, 6: 게임 길이 고르기)
+export const PROTOCOL = 6;
+/** 게임 길이: 여덟 밤(보드게임 그대로) · 스무하루 밤(1919년 2월 8일 - 28일, 스무하루의 밤과 같은 길이) */
+export const NIGHT_OPTIONS = [8, 21];
+function cleanNights(n) { return NIGHT_OPTIONS.indexOf(n) >= 0 ? n : 8; }
 export const MAX_PLAYERS = 5;
 export const NAME_MAX = 10;
 
@@ -72,6 +77,7 @@ export class NetGame {
     this.log = [];          // 방장: 이번 판의 모든 행동(다시 들어오는 사람에게 보냄)
     this.rollLog = [];      // 방장: 이번 순서 정하기의 모든 굴림
     this.names = null;
+    this.nights = 8;        // 게임 길이(방장이 고름)
     this.roll = null;       // 순서 정하기(FirstRoll). 판이 시작된 뒤에도 결과를 보여 주려고 남겨 둔다
     this.game = null;
     this.left = {};         // 판 도중 연결이 끊긴 자리
@@ -119,7 +125,7 @@ export class NetGame {
     link.on('message', function (msg) { self._onPeerMessage(peer, msg); });
     link.on('close', function () { self._onPeerClose(peer); });
     delete this.left[seat];
-    const resume = { type: 'resume', v: PROTOCOL, names: this.names, seat: seat, rolls: this.rollLog };
+    const resume = { type: 'resume', v: PROTOCOL, names: this.names, seat: seat, nights: this.nights, rolls: this.rollLog };
     if (this.game) {
       resume.seed = this.pendingSeed;
       resume.firstOrder = this.firstOrder;
@@ -148,7 +154,17 @@ export class NetGame {
     const count = this.gatheredCount;
     const names = this.lobbyNamesNow();
     const self = this;
-    this.peers.forEach(function (p) { self._send(p, { type: 'lobby', v: PROTOCOL, count: count, names: names }); });
+    const nights = this.nights;
+    // you: 방장이 알고 있는 그 사람의 이름. 참가자는 자기 이름과 다르면 hello를 다시 보낸다
+    this.peers.forEach(function (p) { self._send(p, { type: 'lobby', v: PROTOCOL, count: count, names: names, nights: nights, you: p.name }); });
+  }
+
+  /** 방장: 게임 길이 고르기(모이는 동안 · 판과 판 사이) */
+  setNights(n) {
+    if (!this.isHost) return;
+    this.nights = cleanNights(n);
+    this._sendLobby();
+    this.onChange();
   }
 
   _onPeerClose(peer) {
@@ -183,7 +199,7 @@ export class NetGame {
     this.left = {};
     this.desync = false;
     const self = this;
-    peers.forEach(function (p) { self._send(p, { type: 'roll-begin', v: PROTOCOL, names: self.names, seat: p.seat }); });
+    peers.forEach(function (p) { self._send(p, { type: 'roll-begin', v: PROTOCOL, names: self.names, seat: p.seat, nights: self.nights }); });
     this.onChange();
     return true;
   }
@@ -212,7 +228,7 @@ export class NetGame {
       const order = this.roll.order();
       this.firstOrder = order;
       this._create(this.pendingSeed, this.names, order);
-      this._broadcast({ type: 'start', v: PROTOCOL, seed: this.pendingSeed, names: this.names, firstOrder: order });
+      this._broadcast({ type: 'start', v: PROTOCOL, seed: this.pendingSeed, names: this.names, firstOrder: order, nights: this.nights });
     }
     this.onChange();
     return true;
@@ -220,7 +236,7 @@ export class NetGame {
 
   _create(seed, names, firstOrder) {
     this.names = names;
-    this.game = new MultiGame({ seed: seed, nights: 8 }, names.map(function (n) { return { type: 'human', name: n }; }), firstOrder);
+    this.game = new MultiGame({ seed: seed, nights: this.nights }, names.map(function (n) { return { type: 'human', name: n }; }), firstOrder);
     this.seq = 0;
     this.desync = false;
     this.lastCell = null;
@@ -303,6 +319,7 @@ export class NetGame {
   // 참가자: 다시 들어왔을 때 — 순서 정하기 굴림과 판의 행동을 처음부터 다시 둬서 같은 판을 만든다
   _resume(msg) {
     this.names = msg.names.map(cleanName);
+    this.nights = cleanNights(msg.nights);
     this.mySeat = msg.seat;
     this.left = {};
     this.desync = false;
@@ -334,6 +351,8 @@ export class NetGame {
     if (msg.type === 'lobby') {
       this.lobbyCount = msg.count;
       this.lobbyNames = Array.isArray(msg.names) ? msg.names.map(cleanName) : [];
+      this.nights = cleanNights(msg.nights);
+      if (this.myName && cleanName(msg.you) !== this.myName && this.hostLink) this.hostLink.send({ type: 'hello', name: this.myName });
       this.onChange();
     } else if (msg.type === 'resume') {
       this._resume(msg);
@@ -343,6 +362,7 @@ export class NetGame {
       this.onChange();
     } else if (msg.type === 'roll-begin') {
       this.names = msg.names.map(cleanName);
+      this.nights = cleanNights(msg.nights);
       this.mySeat = msg.seat;
       this.roll = new FirstRoll(msg.names.length);
       this.game = null;
@@ -353,6 +373,7 @@ export class NetGame {
       if (this.rolling) this.roll.roll(msg.seat, msg.die);
       this.onChange();
     } else if (msg.type === 'start') {
+      this.nights = cleanNights(msg.nights);
       this._create(msg.seed, msg.names.map(cleanName), Array.isArray(msg.firstOrder) ? msg.firstOrder : null);
       this.onChange();
     } else if (msg.type === 'left') {
