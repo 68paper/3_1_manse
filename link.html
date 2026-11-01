@@ -53,6 +53,13 @@
   .notice.err { background: rgba(200,49,47,.12); border-left: 4px solid var(--tg-red); }
   .notice.ok { background: rgba(31,78,154,.1); border-left: 4px solid var(--tg-blue); }
 
+  /* 규칙 한눈에 팝업 */
+  .rules-btn { min-height: 30px; padding: 3px 10px; font-size: 13px; border-width: 1.5px; margin-left: 4px; }
+  .modal { position: fixed; inset: 0; background: rgba(20,26,43,.55); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; }
+  .modal-card { width: 100%; max-width: 380px; max-height: 84vh; overflow-y: auto; background: var(--hanji); border: 2px solid var(--ink); border-radius: 14px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .modal-card h3 { font-size: 18px; margin-bottom: 8px; }
+  .modal-card > button { width: 100%; margin-top: 10px; }
+
   /* 카메라 */
   .camera { position: fixed; inset: 0; background: rgba(20,26,43,.92); z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
   .camera video { width: min(92vw, 420px); aspect-ratio: 1; object-fit: cover; border-radius: 14px; background: #000; }
@@ -83,6 +90,26 @@
   .lobby-list .seat .st { font-size: 12px; color: #3f7d4e; }
   .lobby-list .seat.wait .st { color: var(--ink); opacity: .6; }
   .invite-title { font-family: var(--font-title); font-weight: 800; font-size: 16px; margin-top: 4px; }
+  .seg { display: flex; border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  .seg button { flex: 1; border: none; border-radius: 0; background: transparent; padding: 8px 4px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.3; }
+  .seg button + button { border-left: 2px solid var(--ink); }
+  .seg button.on { background: var(--ink); color: var(--hanji); }
+  .seg button small { font-size: 11px; opacity: .75; }
+  /* 괘 표시: 모은 조각마다 괘 그림 + 개수 */
+  .pcs { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; vertical-align: middle; }
+  .pc { display: inline-flex; align-items: center; gap: 2px; }
+  .pc svg { display: block; }
+  .pc b { font-family: var(--font-title); font-weight: 800; font-size: 13px; }
+  .pc.zero { opacity: .45; }
+  .pieces { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .opts button { display: inline-flex; align-items: center; gap: 4px; }
+  /* 끝: 순위표 */
+  .result { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .result th { font-size: 12px; font-weight: 700; opacity: .65; text-align: left; padding: 4px 6px; border-bottom: 1.5px solid rgba(42,34,27,.3); }
+  .result td { padding: 7px 6px; border-bottom: 1px solid rgba(42,34,27,.15); }
+  .result td.n { text-align: right; font-family: var(--font-title); font-weight: 800; }
+  .result tr.win td { background: rgba(200,49,47,.08); }
+  .result .rk { font-family: var(--font-title); font-weight: 800; width: 40px; white-space: nowrap; }
   .name-field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700; }
   .name-field input { font: inherit; font-weight: 400; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: 10px; background: #fffaf0; color: var(--ink); }
   #log-text { min-height: 180px; font-size: 11px; }
@@ -169,6 +196,11 @@
     <div class="card" id="host-lobby">
       <p><b>모인 사람</b> <span id="lobby-count"></span></p>
       <div id="lobby-list" class="lobby-list"></div>
+      <p><b>게임 길이</b></p>
+      <div class="seg" id="nights-seg">
+        <button data-nights="8">여덟 밤</button>
+        <button data-nights="21">스무하루 밤<small>2월 8일 - 28일</small></button>
+      </div>
       <div class="row" id="lobby-actions">
         <button id="btn-invite">한 명 더 받기</button>
         <button class="primary" id="btn-start" disabled>시작하기</button>
@@ -221,7 +253,7 @@
 
   <!-- 함께 두기 -->
   <section id="step-play" class="stack" hidden>
-    <div class="status" id="status"><span class="dot"></span><span class="grow" id="status-text">연결됨</span><span id="night"></span></div>
+    <div class="status" id="status"><span class="dot"></span><span class="grow" id="status-text">연결됨</span><span id="night"></span><button class="rules-btn" id="btn-rules" aria-haspopup="dialog">규칙</button></div>
     <div id="play-body" class="stack"></div>
   </section>
 
@@ -236,6 +268,14 @@
       <button class="ghost" id="btn-log-clear">기록 지우기</button>
     </div>
   </details>
+</div>
+
+<div class="modal" id="rules-modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <h3 id="rules-title">규칙 한눈에</h3>
+    <div id="rules-body"></div>
+    <button class="primary" id="btn-rules-close">닫기</button>
+  </div>
 </div>
 
 <div class="camera" id="camera" hidden>
