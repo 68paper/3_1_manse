@@ -13,6 +13,8 @@
  * 연결 정보는 한 번에 다 모아서(ICE 수집 완료 뒤) 코드 하나에 담는다.
  */
 
+import { ConnLog } from './connlog.js';
+
 const CODE_PREFIX_DEFLATE = 'M1'; // deflate-raw로 압축 + base64url
 const CODE_PREFIX_PLAIN = 'M0';   // 압축을 못 하는 브라우저: base64url만
 const ICE_TIMEOUT_MS = 4000;
@@ -73,19 +75,44 @@ export async function decodeSignal(code) {
 /**
  * PeerLink — 상대 한 명과의 연결.
  * 이벤트: on('open'), on('message', obj), on('close', reason), on('state', connectionState)
+ * 상태가 바뀔 때마다 연결 기록(connlog.js)에 남긴다. label은 기록에 쓸 상대 이름.
  */
 export class PeerLink {
-  constructor() {
+  constructor(label) {
+    this.label = label || '상대';
     this.pc = new RTCPeerConnection({ iceServers: [] });
     this.channel = null;
     this.handlers = {};
     this.closed = false;
+    this.closeReason = null;
     const self = this;
     this.pc.addEventListener('connectionstatechange', function () {
       const st = self.pc.connectionState;
+      self.log('연결 상태: ' + st);
       self._emit('state', st);
-      if (st === 'failed' || st === 'closed') self._close(st === 'failed' ? '연결에 실패했어요.' : '연결이 닫혔어요.');
+      if (st === 'failed' || st === 'closed') self._close(st === 'failed' ? '연결에 실패했어요(네트워크 경로가 끊김).' : '연결이 닫혔어요.');
     });
+    // ICE 상태: disconnected는 잠깐 끊긴 것(다시 붙을 수 있음), failed는 완전히 끊긴 것
+    this.pc.addEventListener('iceconnectionstatechange', function () { self.log('ICE 상태: ' + self.pc.iceConnectionState); });
+  }
+
+  log(what) { ConnLog.add(this.label, what); }
+
+  /** 기록에 쓸 이름을 바꾼다(닉네임을 알게 된 뒤) */
+  setLabel(label) { this.label = label || this.label; }
+
+  // 연결된 뒤 어떤 길로 이어졌는지(같은 Wi-Fi 안 직접 연결인지 등) 기록
+  async _logRoute() {
+    try {
+      const stats = await this.pc.getStats();
+      let pair = null;
+      stats.forEach(function (r) { if (r.type === 'candidate-pair' && (r.selected || r.nominated) && r.state === 'succeeded') pair = r; });
+      if (!pair) return;
+      const local = stats.get(pair.localCandidateId), remote = stats.get(pair.remoteCandidateId);
+      this.log('연결 경로: 내 쪽 ' + (local ? local.candidateType + '/' + (local.protocol || '') + (local.networkType ? '/' + local.networkType : '') : '?') +
+        ' · 상대 쪽 ' + (remote ? remote.candidateType + '/' + (remote.protocol || '') : '?') +
+        (pair.currentRoundTripTime != null ? ' · 왕복 ' + Math.round(pair.currentRoundTripTime * 1000) + 'ms' : ''));
+    } catch (e) { /* 통계를 못 읽어도 연결에는 상관없음 */ }
   }
 
   on(name, fn) { (this.handlers[name] = this.handlers[name] || []).push(fn); return this; }
@@ -93,14 +120,17 @@ export class PeerLink {
   _close(reason) {
     if (this.closed) return;
     this.closed = true;
+    this.closeReason = reason;
+    this.log('끊김: ' + reason);
     this._emit('close', reason);
   }
 
   _bindChannel(ch) {
     const self = this;
     this.channel = ch;
-    ch.addEventListener('open', function () { self._emit('open'); });
-    ch.addEventListener('close', function () { self._close('상대와 연결이 끊겼어요.'); });
+    ch.addEventListener('open', function () { self.log('데이터 채널 열림'); self._logRoute(); self._emit('open'); });
+    ch.addEventListener('close', function () { self._close(self.closing ? '내가 연결을 닫았어요.' : '상대와 연결이 끊겼어요(상대가 화면을 닫았거나 네트워크가 끊김).'); });
+    ch.addEventListener('error', function (e) { self.log('데이터 채널 오류: ' + ((e && e.error && e.error.message) || '알 수 없음')); });
     ch.addEventListener('message', function (e) {
       let obj;
       try { obj = JSON.parse(e.data); } catch (err) { return; }
@@ -157,13 +187,15 @@ export class PeerLink {
 
   send(obj) {
     if (!this.channel || this.channel.readyState !== 'open') return false;
-    this.channel.send(JSON.stringify(obj));
+    try { this.channel.send(JSON.stringify(obj)); } catch (e) { this.log('보내기 실패: ' + e.message); return false; }
     return true;
   }
 
-  close() {
+  close(why) {
+    if (this.closed) return;
+    this.closing = true;
     try { if (this.channel) this.channel.close(); } catch (e) { /* 무시 */ }
     try { this.pc.close(); } catch (e) { /* 무시 */ }
-    this._close('연결을 닫았어요.');
+    this._close(why || '내가 연결을 닫았어요.');
   }
 }

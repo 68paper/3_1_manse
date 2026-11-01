@@ -7,7 +7,8 @@
  * 연결은 별 모양이다. 방장 기기가 참가자마다 연결(PeerLink)을 하나씩 갖고,
  * 참가자끼리는 직접 잇지 않는다. 방장이 판정의 기준이고 모든 소식을 전해 준다.
  *
- *   - 모이기: 참가자가 연결되면 방장이 { type: 'lobby', v, count }로 지금 인원을 알린다.
+ *   - 모이기: 참가자는 연결되자마자 { type: 'hello', name }으로 닉네임을 알리고,
+ *     방장은 { type: 'lobby', v, count, names }로 지금 모인 사람을 알린다.
  *   - 순서 정하기: 방장이 시작하면 자리를 정해(방장 0, 연결된 순서대로 1, 2 …) 참가자마다
  *     { type: 'roll-begin', v, names, seat }를 보낸다. 굴리기는 방장이 대신 굴려
  *     { type: 'roll', seat, die }를 모두에게 알린다(참가자는 { type: 'roll-intent' }만 보낸다).
@@ -19,6 +20,10 @@
  *   - hash: 적용한 뒤의 판 요약. 참가자가 자기 판과 비교해 어긋나면 알린다(desync).
  *   - 나감: 판 도중 참가자 연결이 끊기면 방장이 { type: 'left', seat }를 알린다.
  *     그 사람 차례가 오면 판이 멈추고, 방장이 남은 사람끼리 새 판을 시작할 수 있다.
+ *   - 다시 들어오기: 방장이 끊긴 자리를 새 연결로 다시 받으면(readmit) 그 사람에게
+ *     { type: 'resume', v, names, seat, seed, firstOrder, log, rolls, hash }를 보낸다.
+ *     방장은 시작부터의 행동(log)과 순서 정하기 굴림(rolls)을 모두 적어 두므로, 참가자는
+ *     같은 시드로 처음부터 다시 둬서 같은 판을 만든다. 다른 사람들에게는 { type: 'back', seat }.
  *
  * 행동 a = [종류, 값...]
  *   ['place', pi, cell] · ['keep', cell] · ['eye', cell] · ['reward', key] · ['order', idx]
@@ -29,26 +34,43 @@ import { MultiGame } from '../multi.js';
 import { FirstRoll, rollDie } from '../firstRoll.js';
 
 // 엔진이 같은 시드로 같은 판을 만들어야 하므로, 엔진 동작이나 주고받는 말이 바뀌면 올린다
-// (2: 첫 순서 공정 섞기, 3: 주사위 굴려 순서 정하기, 4: 2 - 5명 · 모이기 · 자리 번호)
-export const PROTOCOL = 4;
+// (2: 첫 순서 공정 섞기, 3: 주사위 굴려 순서 정하기, 4: 2 - 5명 · 모이기 · 자리 번호,
+//  5: 닉네임 · 다시 들어오기)
+export const PROTOCOL = 5;
 export const MAX_PLAYERS = 5;
+export const NAME_MAX = 10;
 
-/** 자리 이름: 방장, 참가자 1, 참가자 2 … */
-export function seatNames(n) {
-  const names = ['방장'];
-  for (let i = 1; i < n; i++) names.push('참가자 ' + i);
-  return names;
+/** 닉네임 다듬기: 앞뒤 공백 · 제어 문자를 빼고 10자까지. 비면 '' */
+export function cleanName(name) {
+  return String(name == null ? '' : name).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, NAME_MAX);
+}
+
+/** 자리 이름: 닉네임이 없으면 방장, 참가자 1, 참가자 2 … 같은 이름이 겹치면 뒤에 번호를 붙인다 */
+export function seatNames(nicks) {
+  const out = [];
+  nicks.forEach(function (nick, i) {
+    let name = cleanName(nick) || (i === 0 ? '방장' : '참가자 ' + i);
+    let k = 2;
+    const base = name;
+    while (out.indexOf(name) >= 0) name = base + ' ' + (k++);
+    out.push(name);
+  });
+  return out;
 }
 
 export class NetGame {
   /** @param isHost 방장이면 true(자리 0). 참가자의 자리는 순서 정하기를 시작할 때 방장이 알려 준다 */
-  constructor(isHost) {
+  constructor(isHost, myName) {
     this.isHost = isHost;
+    this.myName = cleanName(myName);
     this.mySeat = isHost ? 0 : null;
     this.peers = [];        // 방장: [{ link, id, seat, gone }]
     this.hostLink = null;   // 참가자: 방장과의 연결
     this.hostGone = false;
     this.lobbyCount = 1;    // 참가자: 방장이 알려 준 지금 인원
+    this.lobbyNames = [];   // 참가자: 방장이 알려 준 지금 모인 사람 이름
+    this.log = [];          // 방장: 이번 판의 모든 행동(다시 들어오는 사람에게 보냄)
+    this.rollLog = [];      // 방장: 이번 순서 정하기의 모든 굴림
     this.names = null;
     this.roll = null;       // 순서 정하기(FirstRoll). 판이 시작된 뒤에도 결과를 보여 주려고 남겨 둔다
     this.game = null;
@@ -60,6 +82,7 @@ export class NetGame {
     this._peerNo = 0;
     this.onChange = function () {};
     this.onError = function () {};
+    this.onInfo = function () {};   // 좋은 소식(누가 다시 들어옴 등)
   }
 
   // ---- 연결 ----
@@ -67,7 +90,7 @@ export class NetGame {
   /** 방장: 연결된 참가자 하나를 더한다(모이는 동안) */
   addPeer(link) {
     const self = this;
-    const peer = { link: link, id: ++this._peerNo, seat: null, gone: false };
+    const peer = { link: link, id: ++this._peerNo, seat: null, gone: false, name: '' };
     this.peers.push(peer);
     link.on('message', function (msg) { self._onPeerMessage(peer, msg); });
     link.on('close', function () { self._onPeerClose(peer); });
@@ -82,6 +105,31 @@ export class NetGame {
     this.hostLink = link;
     link.on('message', function (msg) { self._onHostMessage(msg); });
     link.on('close', function () { self.hostGone = true; self.onChange(); });
+    link.send({ type: 'hello', name: this.myName });
+  }
+
+  /** 방장: 판(또는 순서 정하기) 도중 끊긴 자리를 새 연결로 다시 받는다 */
+  readmit(link, seat) {
+    if (!this.isHost || !this.left[seat] || !this.names) return false;
+    const self = this;
+    // 그 자리의 옛 연결은 버린다
+    this.peers.forEach(function (p) { if (p.seat === seat) p.seat = null; });
+    const peer = { link: link, id: ++this._peerNo, seat: seat, gone: false, name: this.names[seat] };
+    this.peers.push(peer);
+    link.on('message', function (msg) { self._onPeerMessage(peer, msg); });
+    link.on('close', function () { self._onPeerClose(peer); });
+    delete this.left[seat];
+    const resume = { type: 'resume', v: PROTOCOL, names: this.names, seat: seat, rolls: this.rollLog };
+    if (this.game) {
+      resume.seed = this.pendingSeed;
+      resume.firstOrder = this.firstOrder;
+      resume.log = this.log;
+      resume.hash = this.hash();
+    }
+    this._send(peer, resume);
+    this.peers.forEach(function (p) { if (p !== peer && p.seat != null) self._send(p, { type: 'back', seat: seat }); });
+    this.onChange();
+    return true;
   }
 
   /** 방장: 지금 연결되어 있는 참가자 */
@@ -92,10 +140,15 @@ export class NetGame {
   _send(peer, obj) { if (!peer.gone) peer.link.send(obj); }
   // 판에 앉은 참가자 모두에게(모이는 동안 새로 온 사람은 다음 판부터)
   _broadcast(obj) { const self = this; this.peers.forEach(function (p) { if (p.seat != null) self._send(p, obj); }); }
+  /** 방장: 지금 모인 사람의 이름(방장, 연결된 참가자 순서) */
+  lobbyNamesNow() {
+    return seatNames([this.myName].concat(this.connectedPeers.map(function (p) { return p.name; })));
+  }
   _sendLobby() {
     const count = this.gatheredCount;
+    const names = this.lobbyNamesNow();
     const self = this;
-    this.peers.forEach(function (p) { self._send(p, { type: 'lobby', v: PROTOCOL, count: count }); });
+    this.peers.forEach(function (p) { self._send(p, { type: 'lobby', v: PROTOCOL, count: count, names: names }); });
   }
 
   _onPeerClose(peer) {
@@ -104,8 +157,8 @@ export class NetGame {
     if (peer.seat != null && (this.game || this.roll)) {
       this.left[peer.seat] = true;
       this._broadcast({ type: 'left', seat: peer.seat });
-      if (this.rolling) this.onError(this.names[peer.seat] + '의 연결이 끊겨 순서를 정할 수 없어요. 남은 사람끼리 새 판을 시작해 주세요.');
-      else if (this.game && !this.g.done) this.onError(this.names[peer.seat] + '의 연결이 끊겼어요. 그 사람 차례가 오면 판이 멈춰요. 남은 사람끼리 새 판을 시작할 수 있어요.');
+      const why = peer.link.closeReason ? ' — ' + peer.link.closeReason.replace(/\.$/, '') : '';
+      if (this.rolling || (this.game && !this.g.done)) this.onError(this.names[peer.seat] + '의 연결이 끊겼어요' + why + '. [다시 받기]로 같은 자리에 돌아오게 하거나, 남은 사람끼리 새 판을 시작할 수 있어요.');
     }
     this._sendLobby();
     this.onChange();
@@ -120,8 +173,11 @@ export class NetGame {
     if (peers.length < 1) return false;
     this.peers.forEach(function (p) { p.seat = null; });
     peers.forEach(function (p, i) { p.seat = i + 1; });
-    this.names = seatNames(peers.length + 1);
+    this.names = seatNames([this.myName].concat(peers.map(function (p) { return p.name; })));
     this.pendingSeed = seed;
+    this.firstOrder = null;
+    this.log = [];
+    this.rollLog = [];
     this.roll = new FirstRoll(this.names.length);
     this.game = null;
     this.left = {};
@@ -150,9 +206,11 @@ export class NetGame {
     if (!this.rolling || !this.roll.needs(seat)) return false;
     const die = rollDie();
     this.roll.roll(seat, die);
+    this.rollLog.push({ seat: seat, die: die });
     this._broadcast({ type: 'roll', seat: seat, die: die });
     if (this.roll.done) {
       const order = this.roll.order();
+      this.firstOrder = order;
       this._create(this.pendingSeed, this.names, order);
       this._broadcast({ type: 'start', v: PROTOCOL, seed: this.pendingSeed, names: this.names, firstOrder: order });
     }
@@ -216,6 +274,7 @@ export class NetGame {
 
   _applyAndBroadcast(a) {
     if (!this._apply(a)) return false;
+    this.log.push(a);
     this.seq++;
     this._broadcast({ type: 'act', seq: this.seq, a: a, hash: this.hash() });
     this.onChange();
@@ -226,7 +285,13 @@ export class NetGame {
 
   // 방장: 참가자에게서 온 말. 그 참가자의 자리로만 행동할 수 있다
   _onPeerMessage(peer, msg) {
-    if (!msg || typeof msg.type !== 'string' || peer.seat == null) return;
+    if (!msg || typeof msg.type !== 'string') return;
+    if (msg.type === 'hello') {
+      // 모이는 동안에만 이름을 받는다(판 도중 다시 들어온 사람은 원래 자리 이름 그대로)
+      if (peer.seat == null) { peer.name = cleanName(msg.name); peer.link.setLabel && peer.link.setLabel(peer.name || '참가자'); this._sendLobby(); this.onChange(); }
+      return;
+    }
+    if (peer.seat == null) return;
     if (msg.type === 'roll-intent') {
       this._hostRoll(peer.seat);
     } else if (msg.type === 'intent') {
@@ -235,18 +300,49 @@ export class NetGame {
     }
   }
 
+  // 참가자: 다시 들어왔을 때 — 순서 정하기 굴림과 판의 행동을 처음부터 다시 둬서 같은 판을 만든다
+  _resume(msg) {
+    this.names = msg.names.map(cleanName);
+    this.mySeat = msg.seat;
+    this.left = {};
+    this.desync = false;
+    this.roll = new FirstRoll(this.names.length);
+    const roll = this.roll;
+    (msg.rolls || []).forEach(function (r) { roll.roll(r.seat, r.die); });
+    this.game = null;
+    if (msg.seed != null) {
+      this._create(msg.seed, this.names, Array.isArray(msg.firstOrder) ? msg.firstOrder : null);
+      const self = this;
+      let ok = true;
+      (msg.log || []).forEach(function (a) { if (ok && !self._apply(a)) ok = false; });
+      this.seq = (msg.log || []).length;
+      if (!ok || this.hash() !== msg.hash) {
+        this.desync = true;
+        this.onError('다시 들어왔지만 판을 똑같이 만들지 못했어요. 방장이 새 판을 시작해 주세요.');
+      }
+    }
+    this.onChange();
+  }
+
   // 참가자: 방장에게서 온 말
   _onHostMessage(msg) {
     if (!msg || typeof msg.type !== 'string') return;
-    if ((msg.type === 'lobby' || msg.type === 'roll-begin' || msg.type === 'start') && msg.v !== PROTOCOL) {
+    if ((msg.type === 'lobby' || msg.type === 'roll-begin' || msg.type === 'start' || msg.type === 'resume') && msg.v !== PROTOCOL) {
       this.onError('기기들의 앱 버전이 달라요. 모두 새로 고침해 주세요.');
       return;
     }
     if (msg.type === 'lobby') {
       this.lobbyCount = msg.count;
+      this.lobbyNames = Array.isArray(msg.names) ? msg.names.map(cleanName) : [];
+      this.onChange();
+    } else if (msg.type === 'resume') {
+      this._resume(msg);
+    } else if (msg.type === 'back') {
+      delete this.left[msg.seat];
+      if (this.names) this.onInfo(this.names[msg.seat] + '이(가) 다시 들어왔어요.');
       this.onChange();
     } else if (msg.type === 'roll-begin') {
-      this.names = msg.names;
+      this.names = msg.names.map(cleanName);
       this.mySeat = msg.seat;
       this.roll = new FirstRoll(msg.names.length);
       this.game = null;
@@ -257,7 +353,7 @@ export class NetGame {
       if (this.rolling) this.roll.roll(msg.seat, msg.die);
       this.onChange();
     } else if (msg.type === 'start') {
-      this._create(msg.seed, msg.names, Array.isArray(msg.firstOrder) ? msg.firstOrder : null);
+      this._create(msg.seed, msg.names.map(cleanName), Array.isArray(msg.firstOrder) ? msg.firstOrder : null);
       this.onChange();
     } else if (msg.type === 'left') {
       this.left[msg.seat] = true;

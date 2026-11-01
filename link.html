@@ -83,6 +83,11 @@
   .lobby-list .seat .st { font-size: 12px; color: #3f7d4e; }
   .lobby-list .seat.wait .st { color: var(--ink); opacity: .6; }
   .invite-title { font-family: var(--font-title); font-weight: 800; font-size: 16px; margin-top: 4px; }
+  .name-field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700; }
+  .name-field input { font: inherit; font-weight: 400; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: 10px; background: #fffaf0; color: var(--ink); }
+  #log-text { min-height: 180px; font-size: 11px; }
+  .readmit { display: flex; flex-wrap: wrap; gap: 6px; }
+  .readmit button { flex: 1 1 auto; border-color: var(--tg-red); color: var(--tg-red); }
   .pl { flex: 1; display: flex; align-items: center; gap: 8px; border: 1.5px solid rgba(42,34,27,.3); border-radius: 10px; padding: 6px 8px; font-size: 13px; }
   .pl.cur { border-color: var(--tg-red); box-shadow: 0 0 0 1.5px var(--tg-red); }
   .pl .nm { flex: 1; font-weight: 700; }
@@ -121,6 +126,9 @@
   <section id="step-home" class="stack">
     <p>인터넷 없이, 같은 Wi-Fi(또는 한 사람의 휴대폰 핫스팟)에 있는 기기들을 QR 코드로 이어 함께 둬요.</p>
     <div class="card players-info"><span>👥</span><span><b>2 - 5명</b>이 함께 해요 — 방장 1명 + 참가자 최대 4명. 한 사람에 휴대폰 한 대씩 필요해요.</span></div>
+    <label class="name-field">내 이름(닉네임)
+      <input id="my-name" maxlength="10" autocomplete="nickname" placeholder="비우면 방장 · 참가자 1 …">
+    </label>
     <button class="primary" id="btn-host">방 만들기</button>
     <button id="btn-guest">참가하기</button>
     <details class="guide" id="qr-guide" open>
@@ -148,6 +156,8 @@
         <li>QR은 꼭 <b>이 화면 안의 [찍기] 버튼</b>으로 찍어요. 휴대폰 기본 카메라나 QR 앱으로 찍으면 안 돼요(인터넷 주소가 아니라 연결 정보예요).</li>
         <li>QR을 보여 주는 쪽 <b>화면 밝기를 최대</b>로, 카메라와 <b>15 - 25cm</b> 떨어뜨려 QR이 가운데에 꽉 차게 해요.</li>
         <li>카메라 권한을 물으면 <b>허용</b>해요. 카메라가 안 되면 [코드 복사]한 글자를 상대가 [코드 붙여넣기]에 넣어도 돼요.</li>
+        <li>판 도중 연결이 끊기면: 끊긴 사람이 <b>참가하기</b>를 누르고, 방장이 <b>[○○ 다시 받기]</b>를 눌러 같은 방법으로 QR을 주고받으면 <b>같은 자리로</b> 돌아와요. 방장 화면은 판이 끝날 때까지 켜 두어야 해요(방장 휴대폰이 판을 기억해요).</li>
+        <li>왜 끊겼는지 궁금하면 화면 맨 아래 <b>연결 기록</b>을 열어 [기록 복사]로 보내 주세요. 화면 꺼짐 · 다른 앱 전환 · Wi-Fi 끊김이 언제 있었는지 함께 적혀 있어요.</li>
         <li>참가자는 꼭 <b>한 사람씩</b> 이어요. 방장 화면의 QR은 지금 받는 사람 한 명만 쓸 수 있어요.</li>
         <li>답장까지 찍었는데 연결이 안 되면, 휴대폰들이 같은 Wi-Fi인지 확인해요. 학교 · 회사 Wi-Fi는 기기끼리 통신을 막아 둔 경우가 많아 핫스팟이 더 잘 돼요.</li>
       </ul>
@@ -166,6 +176,7 @@
     </div>
     <div id="host-invite" class="stack">
     <p class="invite-title" id="invite-title">참가자 1 받기</p>
+    <p class="tip" id="readmit-tip" hidden>끊긴 사람에게 <b>참가하기 → 방장 QR 찍기</b>로 이 QR을 찍게 하세요. 답장 QR을 찍으면 같은 자리로 돌아와요.</p>
     <div class="card">
       <p><span class="step-no">1</span> 참가자에게 이 QR을 보여 주세요.</p>
       <p class="tip">참가자는 <b>참가하기 → 방장 QR 찍기</b>로 찍어야 해요(휴대폰 기본 카메라 말고). 화면 밝기를 올려 두면 잘 찍혀요.</p>
@@ -183,6 +194,7 @@
         <button class="ghost" id="btn-host-paste">붙여 넣은 코드로 연결</button>
       </details>
     </div>
+    <button class="ghost" id="btn-invite-cancel" hidden>그만두고 판으로 돌아가기</button>
     </div>
   </section>
 
@@ -214,6 +226,16 @@
   </section>
 
   <div id="notice" class="notice err" hidden></div>
+
+  <details class="guide" id="log-panel">
+    <summary id="log-summary">연결 기록</summary>
+    <p class="muted">연결 상태가 바뀔 때마다, 그리고 화면 꺼짐 · 다른 앱 전환 · Wi-Fi 끊김이 있을 때마다 시각과 함께 적어요. 이 휴대폰 안에만 남고(최근 300줄), [기록 복사]를 눌러야 밖으로 나가요.</p>
+    <textarea id="log-text" readonly rows="10"></textarea>
+    <div class="row" style="margin:8px 0 10px">
+      <button class="ghost" id="btn-log-copy">기록 복사</button>
+      <button class="ghost" id="btn-log-clear">기록 지우기</button>
+    </div>
+  </details>
 </div>
 
 <div class="camera" id="camera" hidden>
