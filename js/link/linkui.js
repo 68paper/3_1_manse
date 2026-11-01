@@ -1,13 +1,14 @@
 /*
- * js/link/linkui.js — 기기끼리 함께하기(link.html) 화면 · 입력(시험판)
+ * js/link/linkui.js — 기기끼리 함께하기(link.html) 화면 · 입력(시험판, 2 - 5명)
  * ------------------------------------------------------------------
  * 연결: rtc.js(PeerLink) + qr.js(그리기 · 카메라 읽기), 판 맞추기: netgame.js
+ * 방장은 참가자를 한 사람씩 QR로 받아(최대 4명) 모은 뒤 시작한다.
  * 판 그림은 본 게임과 같은 주사위 그림(art.js)을, 소리는 같은 배경음 · 북소리(audio.js)와
  * 설정(배경음 · 효과음 켜고 끄기)을 쓴다.
  */
 import { PeerLink } from './rtc.js';
 import { drawQR, scanQR } from './qr.js';
-import { NetGame } from './netgame.js';
+import { NetGame, MAX_PLAYERS, seatNames } from './netgame.js';
 import { Engine } from '../engine.js';
 import { dieIcon } from '../art.js';
 import { randomSeed } from '../levelSetup.js';
@@ -17,12 +18,12 @@ import { getSettings } from '../solo.js';
 const PIECE_NAME = { taegeuk: '태극', geon: '건', ri: '리', gam: '감', gon: '곤' };
 const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
 const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
-const NAMES = ['방장', '참가자'];
 
 const state = {
-  link: null,
   net: null,
   isHost: false,
+  invite: null,     // 방장: 지금 받는 중인 참가자와의 연결(아직 열리지 않음)
+  guestLink: null,  // 참가자: 방장과의 연결
   selectedPi: null, // 내 차례에 고른 광장 주사위
   scan: null,       // 열려 있는 카메라
   heard: null       // 소리용: 마지막으로 본 판의 기록(누가 무엇을 했는지 비교)
@@ -72,33 +73,59 @@ function closeCamera() {
   if (state.scan) state.scan.cancel();
 }
 
-// ---- 연결 ----
-function newLink() {
-  if (state.link) state.link.close();
-  const link = new PeerLink();
-  state.link = link;
-  link.on('open', function () {
-    if (state.link !== link) return;
-    notice(null);
-    startNet();
-  });
-  link.on('close', function (reason) {
-    if (state.link !== link) return;
-    $('status').classList.add('off');
-    $('status-text').textContent = '연결 끊김';
-    notice((reason || '연결이 끊겼어요.') + ' 처음부터 다시 연결해 주세요.');
-    renderPlay();
-  });
-  return link;
+// ---- 방장: 참가자를 한 사람씩 받기 ----
+function makeNet(isHost) {
+  const net = new NetGame(isHost);
+  state.net = net;
+  state.selectedPi = null;
+  state.heard = null;
+  net.onChange = function () {
+    state.selectedPi = null;
+    playNetSounds();
+    // 순서 정하기나 판이 진행 중이면 판 화면으로. 방장이 모으는 중(지난 판이 끝난 뒤 포함)이면 모으기 화면 그대로
+    const playing = net.rolling || (net.game && !net.g.done);
+    if (state.isHost && !$('step-host').hidden && !playing) { renderLobby(); return; }
+    if ($('step-play').hidden && playing) show('step-play');
+    if (!$('step-play').hidden) renderPlay();
+  };
+  net.onError = function (msg) { notice(msg); };
+  return net;
 }
 
-async function startHost() {
+function startHost() {
   state.isHost = true;
+  if (!state.net) makeNet(true);
   show('step-host');
   notice(null);
+  renderLobby();
+  if (state.net.gatheredCount < 2) newInvite();
+}
+
+// 다음 참가자를 받을 연결을 만든다(이전에 받던 연결이 안 열렸으면 닫는다)
+async function newInvite() {
+  const net = state.net;
+  if (net.gatheredCount >= MAX_PLAYERS) return;
+  if (state.invite) state.invite.close();
+  const link = new PeerLink();
+  state.invite = link;
+  const no = net.gatheredCount; // 이번에 받는 참가자 번호(1부터)
+  $('invite-title').textContent = '참가자 ' + no + ' 받기';
+  $('host-invite').hidden = false;
+  $('host-qr').innerHTML = '<p class="muted">연결 코드를 만드는 중…</p>';
+  $('host-code').value = '';
+  $('host-answer').value = '';
   $('btn-host-scan').disabled = true;
+  link.on('open', function () {
+    if (state.invite !== link) return;
+    state.invite = null;
+    net.addPeer(link);
+    notice('참가자 ' + no + '이(가) 연결됐어요. 더 받으려면 [한 명 더 받기], 다 모였으면 [시작하기]를 눌러요.', 'ok');
+    renderLobby();
+  });
+  renderLobby();
   try {
-    const code = await newLink().createOffer();
+    const code = await link.createOffer();
+    if (state.invite !== link) return;
     putQR('host-qr', code);
     $('host-code').value = code;
     $('btn-host-scan').disabled = false;
@@ -109,14 +136,44 @@ async function startHost() {
 }
 
 async function hostAcceptAnswer(code) {
+  if (!state.invite) return;
   try {
-    await state.link.acceptAnswer(code);
+    await state.invite.acceptAnswer(code);
     notice('답장을 받았어요. 연결하는 중…', 'ok');
   } catch (e) {
     notice(e.message || '답장 코드를 읽지 못했어요.');
   }
 }
 
+function renderLobby() {
+  const net = state.net;
+  if (!net) return;
+  const n = net.gatheredCount;
+  $('lobby-count').textContent = n + ' / ' + MAX_PLAYERS + '명';
+  const names = seatNames(n);
+  let html = '<div class="seat"><span class="nm">방장 (나)</span><span class="st">준비됨</span></div>';
+  net.connectedPeers.forEach(function (p, i) {
+    html += '<div class="seat"><span class="nm">' + names[i + 1] + '</span><span class="st">연결됨</span></div>';
+  });
+  if (state.invite) html += '<div class="seat wait"><span class="nm">참가자 ' + n + '</span><span class="st">QR로 받는 중…</span></div>';
+  $('lobby-list').innerHTML = html;
+  $('host-invite').hidden = !state.invite;
+  $('btn-invite').hidden = !!state.invite || n >= MAX_PLAYERS;
+  $('btn-start').disabled = n < 2;
+  $('btn-start').textContent = n < 2 ? '참가자가 오면 시작할 수 있어요' : n + '명으로 시작하기';
+}
+
+function hostStart() {
+  const net = state.net;
+  if (!net || net.gatheredCount < 2) return;
+  if (state.invite) { state.invite.close(); state.invite = null; }
+  notice(null);
+  show('step-play');
+  setStatus();
+  net.start(randomSeed());
+}
+
+// ---- 참가자 ----
 function startGuest() {
   state.isHost = false;
   show('step-guest');
@@ -126,8 +183,20 @@ function startGuest() {
 }
 
 async function guestAcceptOffer(code) {
+  if (state.guestLink) state.guestLink.close();
+  const link = new PeerLink();
+  state.guestLink = link;
+  link.on('open', function () {
+    if (state.guestLink !== link) return;
+    const net = makeNet(false);
+    net.attachHost(link);
+    notice(null);
+    show('step-play');
+    setStatus();
+    renderPlay();
+  });
   try {
-    const answer = await newLink().acceptOffer(code);
+    const answer = await link.acceptOffer(code);
     putQR('guest-qr', answer);
     $('guest-code').value = answer;
     $('guest-scan-card').hidden = true;
@@ -138,20 +207,21 @@ async function guestAcceptOffer(code) {
   }
 }
 
-function startNet() {
-  const net = new NetGame(state.link, state.isHost);
-  state.net = net;
-  state.selectedPi = null;
-  net.onChange = function () { state.selectedPi = null; playNetSounds(); renderPlay(); };
-  net.onError = function (msg) { notice(msg); };
-  show('step-play');
-  $('status').classList.remove('off');
-  $('status-text').textContent = '연결됨 · 나는 ' + NAMES[net.mySeat];
-  if (state.isHost) net.start(randomSeed(), NAMES);
-  renderPlay();
+// ---- 함께 두기 화면 ----
+function online() {
+  const net = state.net;
+  return !!net && (net.isHost ? true : !net.hostGone);
 }
 
-// ---- 함께 두기 화면 ----
+function setStatus() {
+  const net = state.net;
+  if (!net) return;
+  const off = !net.isHost && net.hostGone;
+  $('status').classList.toggle('off', off);
+  const me = net.names && net.mySeat != null ? net.names[net.mySeat] : (net.isHost ? '방장' : '참가자');
+  $('status-text').textContent = off ? '방장과 연결 끊김' : '연결됨 · 나는 ' + me;
+}
+
 function boardHtml(board, cls, opts) {
   opts = opts || {};
   let html = '<div class="board ' + cls + '">';
@@ -169,15 +239,22 @@ function boardHtml(board, cls, opts) {
 function renderPlay() {
   const net = state.net;
   const body = $('play-body');
+  setStatus();
   if (net && net.rolling) { renderRoll(); return; }
-  if (!net || !net.game) { body.innerHTML = '<p class="muted">방장이 판을 여는 중…</p>'; return; }
+  if (!net || !net.game) {
+    const count = net ? net.lobbyCount : 1;
+    $('night').textContent = '모이는 중';
+    body.innerHTML = '<div class="turn wait">방장이 <b>시작하기</b>를 누르기를 기다리는 중… · 지금 ' + count + '명 모였어요(최대 ' + MAX_PLAYERS + '명).</div>';
+    return;
+  }
   const g = net.g;
   const game = net.game;
+  const n = g.players.length;
   const me = g.players[net.mySeat];
-  const them = g.players[1 - net.mySeat];
+  const others = g.players.filter(function (p) { return p.id !== net.mySeat; });
   const cur = net.currentSeat;
-  const online = state.link && !state.link.closed;
-  const myTurn = online && net.isMyTurn && !net.desync;
+  const live = online();
+  const myTurn = live && net.isMyTurn && !net.desync;
   const snap = myTurn ? game.snapshot() : null;
   $('night').textContent = g.done ? '끝' : g.round + ' / 8번째 밤';
 
@@ -185,7 +262,8 @@ function renderPlay() {
   let turn, phaseText = '';
   if (g.done) {
     const st = game.standings();
-    turn = '<b>여덟 밤이 지났어요.</b> ' + (st[0].score === st[1].score ? '같은 점수예요(나중에 그 점수에 올라선 쪽이 앞서요). ' : '') + st[0].name + ' 승리 · ' + st.map(function (p) { return p.name + ' ' + p.score + '점'; }).join(' · ');
+    turn = '<b>여덟 밤이 지났어요.</b> ' + st[0].name + ' 승리 · ' + st.map(function (p, i) { return (i + 1) + '위 ' + p.name + ' ' + p.score + '점'; }).join(' · ') +
+      (st.length > 1 && st[0].score === st[1].score ? ' (같은 점수면 나중에 그 점수에 올라선 사람이 앞서요)' : '');
   } else if (myTurn) {
     const ph = g.phase;
     if (ph === 'place') phaseText = state.selectedPi == null ? '광장에서 사람을 골라요.' : '빨간 테두리 칸에 놓아요.';
@@ -196,13 +274,20 @@ function renderPlay() {
     else if (ph === 'blocked_pool') phaseText = '놓을 곳이 없어요. 돌려보낼 사람을 골라요.';
     else if (ph === 'blocked_eye') phaseText = '치울 밀정을 골라요.';
     turn = '<b>내 차례</b> · 남은 배치 ' + (2 - g.placementsThisTurn) + '번 · ' + phaseText;
+  } else if (!live) {
+    turn = '방장과 연결이 끊겨 진행할 수 없어요.';
+  } else if (net.stalled) {
+    turn = g.players[cur].name + '의 연결이 끊겨 판이 멈췄어요.' + (net.isHost ? ' 아래에서 남은 사람끼리 새 판을 시작할 수 있어요.' : ' 방장이 새 판을 시작할 때까지 기다려 주세요.');
   } else {
-    turn = online ? them.name + ' 차례 · 기다리는 중…' : '연결이 끊겨 진행할 수 없어요.';
+    turn = g.players[cur].name + ' 차례 · 기다리는 중…';
   }
 
-  const pl = function (p) {
-    return '<div class="pl' + (cur === p.id ? ' cur' : '') + '"><span class="nm">' + p.name + (p.id === net.mySeat ? ' (나)' : '') + '</span><span class="sc">' + p.score + '</span></div>';
-  };
+  // 이번 밤 고르는 순서대로 사람 카드(이미 둔 사람은 흐리게)
+  const players = g.order.map(function (id, k) {
+    const p = g.players[id];
+    const cls = 'pl' + (cur === id ? ' cur' : '') + (!g.done && k < g.orderAt ? ' done' : '') + (net.left[id] ? ' gone' : '');
+    return '<div class="' + cls + '"><span class="nm">' + p.name + (id === net.mySeat ? ' (나)' : '') + '</span><span class="sc">' + p.score + '</span></div>';
+  }).join('');
 
   // 내 판에서 누를 수 있는 칸
   const opts = { clickable: myTurn, size: 54 };
@@ -223,48 +308,64 @@ function renderPlay() {
     choices = snap.comboOrderOptions.map(function (o) { return '<button data-order="' + o.idx + '">' + COMBO_NAME[o.type] + '</button>'; }).join('');
   }
 
+  // 다른 사람들의 판: 둘이면 옆에, 셋 이상이면 내 판 아래에 줄지어
+  const otherBoard = function (p, cls) {
+    return '<div class="board-col' + (cls ? ' ' + cls : '') + '"><div class="board-label">' + p.name + ' · ' + p.score + '점</div>' +
+      boardHtml(p.board, 'theirs', { size: 30, pulse: net.lastSeat === p.id ? net.lastCell : null }) + '</div>';
+  };
+  let boards;
+  if (n === 2) {
+    boards = '<div class="boards"><div class="board-col mine"><div class="board-label">내 판</div>' + boardHtml(me.board, 'mine', opts) + '</div>' +
+      otherBoard(others[0], 'theirs') + '</div>';
+  } else {
+    boards = '<div class="mine-wrap"><div class="board-label">내 판</div>' + boardHtml(me.board, 'mine', opts) + '</div>' +
+      '<div class="others" style="grid-template-columns: repeat(' + Math.min(others.length, 4) + ', minmax(0, 1fr))">' + others.map(function (p) { return otherBoard(p); }).join('') + '</div>';
+  }
+
+  const canRestart = net.isHost && (g.done || net.stalled);
   body.innerHTML =
     '<div class="turn' + (myTurn ? '' : ' wait') + '">' + turn + '</div>' +
-    '<div class="players">' + pl(g.players[0]) + pl(g.players[1]) + '</div>' +
-    '<div class="boards">' +
-      '<div class="board-col mine"><div class="board-label">내 판</div>' + boardHtml(me.board, 'mine', opts) + '</div>' +
-      '<div class="board-col theirs"><div class="board-label">' + them.name + '의 판</div>' + boardHtml(them.board, 'theirs', { size: 30, pulse: net.lastSeat === them.id ? net.lastCell : null }) + '</div>' +
-    '</div>' +
+    '<div class="players' + (n > 2 ? ' many' : '') + '">' + (g.done ? '' : '<div class="order">이번 밤 고르는 순서 →</div>') + players + '</div>' +
+    boards +
     (g.done ? '' : '<div class="pool">' + pool + '</div>') +
     (choices ? '<div class="opts">' + choices + '</div>' : '') +
     '<div class="pieces">내 조각 ' + PIECE_ORDER.map(function (k) { return PIECE_NAME[k] + ' ' + me.parts[k]; }).join(' · ') + ' · 태극기 ' + Engine.flagsOf(me) + '장</div>' +
-    (g.done && state.isHost && online ? '<button class="primary" id="btn-again">새 판 시작</button>' : '') +
-    (g.done && !state.isHost && online ? '<p class="muted" style="text-align:center">방장이 새 판을 시작할 수 있어요.</p>' : '') +
-    '<p class="muted" style="text-align:center">시험판 · 판 확인 번호 ' + net.seq + (net.desync ? ' · 판이 어긋났어요' : '') + '</p>';
+    (canRestart ? '<div class="row"><button class="primary" id="btn-again">' + (net.gatheredCount >= 2 ? net.gatheredCount + '명으로 새 판' : '새 판(사람이 더 필요해요)') + '</button>' +
+      (net.gatheredCount < MAX_PLAYERS ? '<button id="btn-more">사람 더 받기</button>' : '') + '</div>' : '') +
+    (g.done && !net.isHost && live ? '<p class="muted" style="text-align:center">방장이 새 판을 시작할 수 있어요.</p>' : '') +
+    '<p class="muted" style="text-align:center">시험판 · ' + n + '명 · 판 확인 번호 ' + net.seq + (net.desync ? ' · 판이 어긋났어요' : '') + '</p>';
 }
 
-// 첫 밤 순서 정하기: 둘 다 주사위를 굴려 눈이 큰 사람이 먼저(같으면 다시)
+// 첫 밤 순서 정하기: 모두 주사위를 굴려 눈이 큰 사람부터(같으면 그 사람들만 다시)
 function renderRoll() {
   const net = state.net;
   const r = net.roll;
-  const online = state.link && !state.link.closed;
+  const live = online();
   const ranks = r.ranks();
   const tied = r.rerolls > 0 && !r.done && r.active.length;
   $('night').textContent = '순서 정하기';
   let turn;
-  if (net.myRollNeeded && online) turn = '<b>주사위를 굴려요.</b> 눈이 큰 사람이 첫 밤에 먼저 골라요(밀정은 가장 작은 눈).' + (tied ? ' 같은 눈이라 다시 굴려요!' : '');
-  else turn = online ? (tied ? '같은 눈이에요. ' : '') + '상대가 굴리기를 기다리는 중…' : '연결이 끊겨 진행할 수 없어요.';
-  const rows = [0, 1].map(function (seat) {
+  if (net.myRollNeeded && live) turn = '<b>주사위를 굴려요.</b> 눈이 큰 사람부터 첫 밤에 먼저 골라요(밀정은 가장 작은 눈).' + (tied ? ' 같은 눈이라 다시 굴려요!' : '');
+  else if (!live) turn = '방장과 연결이 끊겨 진행할 수 없어요.';
+  else turn = (tied ? '같은 눈이 나와 그 사람들만 다시 굴려요. ' : '') + '다른 사람이 굴리기를 기다리는 중…';
+  const rows = net.names.map(function (name, seat) {
     const face = r.faces[seat];
-    const name = net.names[seat] + (seat === net.mySeat ? ' (나)' : '');
     const needs = r.needs(seat);
-    return '<div class="pl' + (needs ? ' cur' : '') + '" style="min-height:64px">' +
-      '<span class="nm">' + (ranks[seat] && !needs ? ranks[seat] + '위 · ' : '') + name + '</span>' +
-      (face ? dieIcon(face.color, face.value, 46) : '<span class="muted">' + (needs ? '굴릴 차례' : '') + '</span>') + '</div>';
+    const label = (ranks[seat] && !needs ? ranks[seat] + '위 · ' : '') + name + (seat === net.mySeat ? ' (나)' : '');
+    return '<div class="pl' + (needs ? ' cur' : '') + (net.left[seat] ? ' gone' : '') + '" style="min-height:60px">' +
+      '<span class="nm">' + label + '</span>' +
+      (face ? '<span class="muted">눈 ' + r.history[seat].join(' → ') + '</span>' + dieIcon(face.color, face.value, 44) : '<span class="muted">' + (needs ? '굴릴 차례' : '') + '</span>') + '</div>';
   }).join('');
+  const canRestart = net.isHost && Object.keys(net.left).length > 0;
   $('play-body').innerHTML =
-    '<div class="turn' + (net.myRollNeeded && online ? '' : ' wait') + '">' + turn + '</div>' +
+    '<div class="turn' + (net.myRollNeeded && live ? '' : ' wait') + '">' + turn + '</div>' +
     '<div class="stack">' + rows + '</div>' +
-    (net.myRollNeeded && online ? '<button class="primary" id="btn-roll">' + (r.history[net.mySeat].length ? '다시 굴리기' : '주사위 굴리기') + '</button>' : '');
+    (net.myRollNeeded && live ? '<button class="primary" id="btn-roll">' + (r.history[net.mySeat].length ? '다시 굴리기' : '주사위 굴리기') + '</button>' : '') +
+    (canRestart ? '<button id="btn-again">' + (net.gatheredCount >= 2 ? '남은 ' + net.gatheredCount + '명으로 다시 시작' : '새 판(사람이 더 필요해요)') + '</button>' : '');
 }
 
 // ---- 소리 ----
-// 판이 바뀔 때마다(내 행동이든 상대 행동이든) 전과 비교해 일어난 일에 맞는 북 장단을 친다.
+// 판이 바뀔 때마다(내 행동이든 남의 행동이든) 전과 비교해 일어난 일에 맞는 북 장단을 친다.
 // 본 게임(ui.js의 playActionSounds)과 같은 순서 · 같은 장단
 function heardState() {
   const net = state.net;
@@ -317,10 +418,14 @@ function onPlayClick(e) {
   const net = state.net;
   if (!net) return;
   if (e.target.closest('#btn-roll')) { net.rollMine(); return; }
-  if (!net.game) return;
-  // 판이 끝나면 누구 차례도 아니므로, 새 판 버튼은 차례 확인보다 먼저 본다
-  if (e.target.closest('#btn-again')) { net.start(randomSeed(), NAMES); return; }
-  if (!net.isMyTurn || net.desync) return;
+  if (e.target.closest('#btn-again')) {
+    if (net.gatheredCount < 2) { startHost(); return; }
+    notice(null);
+    net.start(randomSeed());
+    return;
+  }
+  if (e.target.closest('#btn-more')) { startHost(); if (!state.invite) newInvite(); return; }
+  if (!net.game || !net.isMyTurn || net.desync) return;
   const g = net.g;
   const die = e.target.closest('.pool button[data-pi]');
   if (die && !die.disabled) {
@@ -353,6 +458,8 @@ function looksLikeCode(text) { return /^M[01][A-Za-z0-9_-]{20,}$/.test(String(te
 function wire() {
   $('btn-host').addEventListener('click', startHost);
   $('btn-guest').addEventListener('click', startGuest);
+  $('btn-invite').addEventListener('click', newInvite);
+  $('btn-start').addEventListener('click', hostStart);
   $('btn-host-scan').addEventListener('click', function () {
     openCamera('참가자의 답장 QR을 화면 가운데에 맞춰 주세요.', looksLikeCode)
       .then(function (code) { if (code) hostAcceptAnswer(code); })
@@ -367,7 +474,7 @@ function wire() {
   $('btn-guest-paste').addEventListener('click', function () { guestAcceptOffer($('guest-offer').value); });
   $('btn-camera-cancel').addEventListener('click', closeCamera);
   document.body.addEventListener('click', function (e) {
-    if (e.target.closest('#step-home button, #step-host button, #step-guest button, #btn-camera-cancel, #btn-roll, #btn-again')) Sound.play('tap');
+    if (e.target.closest('#step-home button, #step-host button, #step-guest button, #btn-camera-cancel, #btn-roll, #btn-again, #btn-more')) Sound.play('tap');
     const cp = e.target.closest('[data-copy]');
     if (cp) copyText(cp.dataset.copy);
   });
@@ -387,3 +494,10 @@ registerServiceWorker();
 applySoundSettings();
 document.addEventListener('pointerdown', function () { Sound.unlock(); }, { capture: true });
 document.addEventListener('visibilitychange', function () { Sound.setHidden(document.hidden); });
+// 화면을 닫거나 다른 곳으로 가면 연결을 바로 닫아, 남은 사람들이 곧바로 알 수 있게 한다
+// (그냥 사라지면 WebRTC가 알아차리는 데 30초쯤 걸린다)
+window.addEventListener('pagehide', function () {
+  if (state.invite) state.invite.close();
+  if (state.guestLink) state.guestLink.close();
+  if (state.net) state.net.peers.forEach(function (p) { p.link.close(); });
+});

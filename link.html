@@ -67,7 +67,22 @@
   .turn { background: var(--sky-night); color: #f3ead6; border-radius: 12px; padding: 9px 12px; font-size: 14.5px; line-height: 1.5; }
   .turn b { color: #f4c05a; }
   .turn.wait { background: rgba(42,34,27,.12); color: var(--ink); }
-  .players { display: flex; gap: 8px; }
+  .players { display: flex; flex-wrap: wrap; gap: 6px; }
+  .players .order { width: 100%; font-size: 12px; opacity: .65; }
+  .pl.done { opacity: .5; }
+  .pl.gone .nm::after { content: ' · 끊김'; color: var(--tg-red); font-weight: 400; }
+  .players.many .pl { flex: 1 1 calc(33% - 6px); min-width: 0; padding: 5px 7px; }
+  .players.many .pl .sc { font-size: 15px; }
+  /* 셋 이상이면 내 판을 조금 줄여 광장까지 한 화면에 들어오게 */
+  .mine-wrap { width: min(100%, 290px); margin: 0 auto; }
+  .others { display: grid; gap: 8px; }
+  .others .board-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lobby-list { display: flex; flex-direction: column; gap: 6px; }
+  .lobby-list .seat { display: flex; align-items: center; gap: 8px; font-size: 14px; background: rgba(255,250,240,.6); border-radius: 8px; padding: 7px 10px; }
+  .lobby-list .seat .nm { flex: 1; font-weight: 700; }
+  .lobby-list .seat .st { font-size: 12px; color: #3f7d4e; }
+  .lobby-list .seat.wait .st { color: var(--ink); opacity: .6; }
+  .invite-title { font-family: var(--font-title); font-weight: 800; font-size: 16px; margin-top: 4px; }
   .pl { flex: 1; display: flex; align-items: center; gap: 8px; border: 1.5px solid rgba(42,34,27,.3); border-radius: 10px; padding: 6px 8px; font-size: 13px; }
   .pl.cur { border-color: var(--tg-red); box-shadow: 0 0 0 1.5px var(--tg-red); }
   .pl .nm { flex: 1; font-weight: 700; }
@@ -100,44 +115,57 @@
 </head>
 <body>
 <div id="app">
-  <div class="topbar"><a href="index.html" aria-label="처음 화면으로">←</a><h1>기기끼리 함께하기 <span class="tag">시험판</span> <span class="tag" style="background:var(--tg-blue)">2인용</span></h1></div>
+  <div class="topbar"><a href="index.html" aria-label="처음 화면으로">←</a><h1>기기끼리 함께하기 <span class="tag">시험판</span> <span class="tag" style="background:var(--tg-blue)">2 - 5인</span></h1></div>
 
   <!-- 처음 -->
   <section id="step-home" class="stack">
-    <p>인터넷 없이, 같은 Wi-Fi(또는 한 사람의 휴대폰 핫스팟)에 있는 두 기기를 QR 코드로 이어 함께 둬요.</p>
-    <div class="card players-info"><span>👥</span><span><b>2명</b>이 함께 해요 — 방장 1명 + 참가자 1명. 휴대폰이 두 대 필요해요. 3명 이상은 아직 안 돼요(시험판).</span></div>
+    <p>인터넷 없이, 같은 Wi-Fi(또는 한 사람의 휴대폰 핫스팟)에 있는 기기들을 QR 코드로 이어 함께 둬요.</p>
+    <div class="card players-info"><span>👥</span><span><b>2 - 5명</b>이 함께 해요 — 방장 1명 + 참가자 최대 4명. 한 사람에 휴대폰 한 대씩 필요해요.</span></div>
     <button class="primary" id="btn-host">방 만들기</button>
     <button id="btn-guest">참가하기</button>
     <details class="guide" id="qr-guide" open>
       <summary>QR로 연결하는 방법</summary>
       <h3>준비</h3>
       <ul>
-        <li>두 휴대폰을 <b>같은 Wi-Fi</b>에 연결해요. Wi-Fi가 없으면 한 사람이 <b>핫스팟</b>을 켜고 다른 사람이 거기에 연결해요.</li>
+        <li>모든 휴대폰을 <b>같은 Wi-Fi</b>에 연결해요. Wi-Fi가 없으면 한 사람이 <b>핫스팟</b>을 켜고 나머지가 거기에 연결해요.</li>
         <li>인터넷은 없어도 돼요. 다만 처음 한 번은 인터넷이 될 때 이 화면을 열어 두어야 오프라인에서도 열려요.</li>
       </ul>
       <h3>방장(먼저 하는 사람)</h3>
       <ol>
-        <li><b>방 만들기</b>를 누르면 QR이 떠요. 참가자에게 화면을 보여 줘요.</li>
+        <li><b>방 만들기</b>를 누르면 QR이 떠요. 첫 번째 참가자에게 화면을 보여 줘요.</li>
         <li>참가자 화면에 <b>답장 QR</b>이 뜨면, <b>답장 QR 찍기</b>를 눌러 그 QR을 비춰요.</li>
+        <li>사람이 더 있으면 <b>한 명 더 받기</b>를 눌러 같은 방법으로 한 사람씩 이어요(최대 4명).</li>
+        <li>다 모이면 <b>시작하기</b>를 눌러요.</li>
       </ol>
       <h3>참가자</h3>
       <ol>
         <li><b>참가하기</b> → <b>방장 QR 찍기</b>를 누르고 방장 화면의 QR을 비춰요.</li>
         <li>내 화면에 뜬 <b>답장 QR</b>을 방장에게 보여 줘요.</li>
       </ol>
-      <p>두 화면에 <b>연결됨</b>이 뜨면, 둘 다 <b>주사위 굴리기</b>를 눌러 첫 밤 순서를 정해요.</p>
+      <p>방장이 시작하면 모두 <b>주사위 굴리기</b>를 눌러 첫 밤 순서를 정해요. 광장에는 밤마다 인원 × 2 + 2개(2명 6개 · 3명 8개 · 4명 10개 · 5명 12개)가 나와요.</p>
       <h3>잘 안 될 때</h3>
       <ul>
         <li>QR은 꼭 <b>이 화면 안의 [찍기] 버튼</b>으로 찍어요. 휴대폰 기본 카메라나 QR 앱으로 찍으면 안 돼요(인터넷 주소가 아니라 연결 정보예요).</li>
         <li>QR을 보여 주는 쪽 <b>화면 밝기를 최대</b>로, 카메라와 <b>15 - 25cm</b> 떨어뜨려 QR이 가운데에 꽉 차게 해요.</li>
         <li>카메라 권한을 물으면 <b>허용</b>해요. 카메라가 안 되면 [코드 복사]한 글자를 상대가 [코드 붙여넣기]에 넣어도 돼요.</li>
-        <li>답장까지 찍었는데 연결이 안 되면, 두 휴대폰이 같은 Wi-Fi인지 확인해요. 학교 · 회사 Wi-Fi는 기기끼리 통신을 막아 둔 경우가 많아 핫스팟이 더 잘 돼요.</li>
+        <li>참가자는 꼭 <b>한 사람씩</b> 이어요. 방장 화면의 QR은 지금 받는 사람 한 명만 쓸 수 있어요.</li>
+        <li>답장까지 찍었는데 연결이 안 되면, 휴대폰들이 같은 Wi-Fi인지 확인해요. 학교 · 회사 Wi-Fi는 기기끼리 통신을 막아 둔 경우가 많아 핫스팟이 더 잘 돼요.</li>
       </ul>
     </details>
   </section>
 
   <!-- 방장 -->
   <section id="step-host" class="stack" hidden>
+    <div class="card" id="host-lobby">
+      <p><b>모인 사람</b> <span id="lobby-count"></span></p>
+      <div id="lobby-list" class="lobby-list"></div>
+      <div class="row" id="lobby-actions">
+        <button id="btn-invite">한 명 더 받기</button>
+        <button class="primary" id="btn-start" disabled>시작하기</button>
+      </div>
+    </div>
+    <div id="host-invite" class="stack">
+    <p class="invite-title" id="invite-title">참가자 1 받기</p>
     <div class="card">
       <p><span class="step-no">1</span> 참가자에게 이 QR을 보여 주세요.</p>
       <p class="tip">참가자는 <b>참가하기 → 방장 QR 찍기</b>로 찍어야 해요(휴대폰 기본 카메라 말고). 화면 밝기를 올려 두면 잘 찍혀요.</p>
@@ -154,6 +182,7 @@
         <textarea id="host-answer" placeholder="참가자의 답장 코드를 붙여 넣으세요"></textarea>
         <button class="ghost" id="btn-host-paste">붙여 넣은 코드로 연결</button>
       </details>
+    </div>
     </div>
   </section>
 
