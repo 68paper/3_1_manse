@@ -2,7 +2,8 @@
  * js/link/linkui.js — 기기끼리 함께하기(link.html) 화면 · 입력(시험판)
  * ------------------------------------------------------------------
  * 연결: rtc.js(PeerLink) + qr.js(그리기 · 카메라 읽기), 판 맞추기: netgame.js
- * 판 그림은 본 게임과 같은 주사위 그림(art.js)을 쓴다.
+ * 판 그림은 본 게임과 같은 주사위 그림(art.js)을, 소리는 같은 배경음 · 북소리(audio.js)와
+ * 설정(배경음 · 효과음 켜고 끄기)을 쓴다.
  */
 import { PeerLink } from './rtc.js';
 import { drawQR, scanQR } from './qr.js';
@@ -10,6 +11,8 @@ import { NetGame } from './netgame.js';
 import { Engine } from '../engine.js';
 import { dieIcon } from '../art.js';
 import { randomSeed } from '../levelSetup.js';
+import { Sound } from '../audio.js';
+import { getSettings } from '../solo.js';
 
 const PIECE_NAME = { taegeuk: '태극', geon: '건', ri: '리', gam: '감', gon: '곤' };
 const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
@@ -21,7 +24,8 @@ const state = {
   net: null,
   isHost: false,
   selectedPi: null, // 내 차례에 고른 광장 주사위
-  scan: null        // 열려 있는 카메라
+  scan: null,       // 열려 있는 카메라
+  heard: null       // 소리용: 마지막으로 본 판의 기록(누가 무엇을 했는지 비교)
 };
 
 const $ = function (id) { return document.getElementById(id); };
@@ -138,7 +142,7 @@ function startNet() {
   const net = new NetGame(state.link, state.isHost);
   state.net = net;
   state.selectedPi = null;
-  net.onChange = function () { state.selectedPi = null; renderPlay(); };
+  net.onChange = function () { state.selectedPi = null; playNetSounds(); renderPlay(); };
   net.onError = function (msg) { notice(msg); };
   show('step-play');
   $('status').classList.remove('off');
@@ -259,6 +263,56 @@ function renderRoll() {
     (net.myRollNeeded && online ? '<button class="primary" id="btn-roll">' + (r.history[net.mySeat].length ? '다시 굴리기' : '주사위 굴리기') + '</button>' : '');
 }
 
+// ---- 소리 ----
+// 판이 바뀔 때마다(내 행동이든 상대 행동이든) 전과 비교해 일어난 일에 맞는 북 장단을 친다.
+// 본 게임(ui.js의 playActionSounds)과 같은 순서 · 같은 장단
+function heardState() {
+  const net = state.net;
+  if (!net) return null;
+  if (net.rolling) return { rolling: true, rolled: net.roll.history.reduce(function (n, h) { return n + h.length; }, 0) + Object.keys(net.roll.current).length, done: false };
+  const g = net.g;
+  if (!g) return null;
+  const sum = { placements: 0, same: 0, consec: 0, color: 0, scatterLines: 0, withdrawn: 0, blocked: 0, eyesRemoved: 0, pieces: 0, flags: 0 };
+  g.players.forEach(function (p) {
+    Object.keys(sum).forEach(function (k) { if (p.stats[k] != null) sum[k] += p.stats[k]; });
+    sum.pieces += Engine.pieceTotal(p);
+    sum.flags += Engine.flagsOf(p);
+  });
+  return { game: net.game, round: g.round, done: g.done, s: sum };
+}
+
+function playNetSounds() {
+  const before = state.heard;
+  const after = heardState();
+  state.heard = after;
+  if (!after) return;
+  if (after.rolling) {
+    if (!before || !before.rolling) Sound.play('select');
+    else if (after.rolled !== before.rolled) Sound.play('place');
+    return;
+  }
+  if (!before || before.rolling || before.game !== after.game) { Sound.play('night'); return; } // 새 판
+  const b = before.s, a = after.s;
+  let d = 0;
+  const next = function (name, gap) { Sound.play(name, d); d += Sound.span(name) + gap; };
+  if (a.placements > b.placements) next('place', 0.18);
+  if (a.same + a.consec + a.color > b.same + b.consec + b.color) next('combo', 0.3);
+  if (a.eyesRemoved > b.eyesRemoved) next('eye', 0.25);
+  if (a.flags > b.flags) next('flag', 0.3);
+  else if (a.pieces > b.pieces) next('reward', 0.25);
+  if (a.scatterLines > b.scatterLines) next('scatter', 0.25);
+  if (a.withdrawn > b.withdrawn) next('withdraw', 0.25);
+  if (a.blocked > b.blocked) next('blocked', 0.25);
+  if (d === 0 && !after.done && after.round === before.round) Sound.play('select'); // 남길 사람 고르기 등
+  if (after.done && !before.done) Sound.play('dawn', d + 0.3);
+  else if (after.round > before.round) Sound.play('night', d + 0.3);
+}
+
+function applySoundSettings() {
+  const st = getSettings();
+  Sound.configure({ bgm: st.bgm !== false, sfx: st.sfx !== false });
+}
+
 function onPlayClick(e) {
   const net = state.net;
   if (!net) return;
@@ -273,6 +327,7 @@ function onPlayClick(e) {
     const pi = Number(die.dataset.pi);
     if (g.phase === 'blocked_pool') { net.act(['blockedPool', pi]); return; }
     state.selectedPi = state.selectedPi === pi ? null : pi;
+    Sound.play('select');
     renderPlay();
     return;
   }
@@ -312,6 +367,7 @@ function wire() {
   $('btn-guest-paste').addEventListener('click', function () { guestAcceptOffer($('guest-offer').value); });
   $('btn-camera-cancel').addEventListener('click', closeCamera);
   document.body.addEventListener('click', function (e) {
+    if (e.target.closest('#step-home button, #step-host button, #step-guest button, #btn-camera-cancel, #btn-roll, #btn-again')) Sound.play('tap');
     const cp = e.target.closest('[data-copy]');
     if (cp) copyText(cp.dataset.copy);
   });
@@ -327,3 +383,7 @@ function registerServiceWorker() {
 
 wire();
 registerServiceWorker();
+// 소리: 브라우저는 첫 터치 뒤에만 소리를 낼 수 있다. 화면이 가려지면 배경음을 멈춘다
+applySoundSettings();
+document.addEventListener('pointerdown', function () { Sound.unlock(); }, { capture: true });
+document.addEventListener('visibilitychange', function () { Sound.setHidden(document.hidden); });
