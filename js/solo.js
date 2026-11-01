@@ -34,7 +34,7 @@ export const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
 
 /**
  * SoloGame — 화면(ui.js)이 쓰는 얇은 래퍼.
- * mode: 'campaign' | 'endless' (여럿이 하는 자유 연습은 multi.js의 MultiGame이 이 클래스를 확장)
+ * mode: 'tutorial' | 'endless' (첫 걸음은 tutorial.js의 TutorialGame, 여럿이 하는 자유 연습은 multi.js의 MultiGame이 이 클래스를 확장)
  * 판 · 조각 · 점수 등은 모두 '지금 화면에 보이는 플레이어'(this.player) 기준이다. 1인 모드에서는 항상 0번.
  */
 export class SoloGame {
@@ -177,30 +177,8 @@ export class SoloGame {
     return '1919년 3월 1일, 날이 밝았습니다.';
   }
 
-  /**
-   * 별1 목표의 현재 진행. { type, current, target, met }
-   * noScatter는 끝날 때까지 지켜야 하므로 current = 흩어진 줄 수, target = 0.
-   */
-  goalProgress() {
-    const stars = this.level.stars || [];
-    const stats = this.player.stats;
-    const goal = this.level.goal || { type: 'score' };
-    let current, target, met;
-    if (goal.type === 'flags') { current = this.flags; target = goal.count || 1; met = current >= target; }
-    else if (goal.type === 'combo') { current = stats[goal.combo] || 0; target = goal.count || 1; met = current >= target; }
-    else if (goal.type === 'noScatter') { current = stats.scatterLines; target = 0; met = current === 0; }
-    else { current = this.score; target = stars.length ? stars[0] : 1; met = current >= target; }
-    return { type: goal.type, combo: goal.combo, current: current, target: target, met: met };
-  }
-
-  /** 결과 화면용 별 계산: 별1 = 목표 달성, 별2·3 = 점수 기준(stars[1], stars[2]) */
-  starsEarned() {
-    const stars = this.level.stars || [];
-    const a1 = this.goalProgress().met;
-    const a2 = stars.length > 1 ? this.score >= stars[1] : false;
-    const a3 = stars.length > 2 ? this.score >= stars[2] : false;
-    return (a1 ? 1 : 0) + (a2 ? 1 : 0) + (a3 ? 1 : 0);
-  }
+  /** 결과 화면용 별(스무하루의 밤은 별이 없다. 단속의 밤은 CrackdownGame이 따로 센다) */
+  starsEarned() { return 0; }
 }
 
 // ---------------------------------------------------------------------
@@ -278,23 +256,30 @@ export function addSavedNames(names) {
   return next;
 }
 
-export function getCampaignProgress() {
-  // { [levelId]: { stars: 0-3, bestScore: n } }
-  return storageGet('campaign', {});
+/**
+ * 첫 걸음 진행도. { reached, done }
+ *   reached: 마친 장면 중 가장 뒤의 번호(js/tutorial.js의 TUTORIAL_SCENES 순서, 아직 없으면 -1)
+ *   done: 과정을 끝까지 마쳤거나 건너뛰었는지(별점 없이 "마침"만 표시)
+ */
+export function getTutorialProgress() {
+  const p = storageGet('tutorial', null);
+  return {
+    reached: p && typeof p.reached === 'number' ? p.reached : -1,
+    done: !!(p && p.done)
+  };
 }
-export function saveCampaignResult(levelId, stars, score) {
-  const prog = getCampaignProgress();
-  const cur = prog[levelId] || { stars: 0, bestScore: 0 };
-  prog[levelId] = { stars: Math.max(cur.stars, stars), bestScore: Math.max(cur.bestScore, score) };
-  storageSet('campaign', prog);
-  return prog[levelId];
+/** 장면 하나를 마쳤을 때(이미 더 뒤까지 왔으면 그대로) */
+export function saveTutorialSceneDone(index, isLast) {
+  const cur = getTutorialProgress();
+  const next = { reached: Math.max(cur.reached, index), done: cur.done || !!isLast };
+  storageSet('tutorial', next);
+  return next;
 }
-export function isLevelUnlocked(levels, levelId) {
-  const idx = levels.findIndex(function (l) { return l.id === levelId; });
-  if (idx <= 0) return true;
-  const prog = getCampaignProgress();
-  const prevId = levels[idx - 1].id;
-  return !!(prog[prevId] && prog[prevId].stars >= 1);
+/** 과정 건너뛰기: 장면을 보지 않아도 "마침" */
+export function skipTutorial() {
+  const next = Object.assign(getTutorialProgress(), { done: true });
+  storageSet('tutorial', next);
+  return next;
 }
 
 /** 스무하루의 밤 기록. { score, nights } 최고 점수 하나만 보관 (밤 제한이 없던 시절 기록 'endless'와 구분) */

@@ -8,11 +8,12 @@ import {
   SoloGame, PIECE_NAME, PIECE_ORDER,
   makePracticeLevel, makeEndlessLevel, saveEndlessResult,
   requestPersistentStorage, getSettings, setSettings,
-  getCampaignProgress, saveCampaignResult, isLevelUnlocked,
+  getTutorialProgress, saveTutorialSceneDone, skipTutorial,
   getPracticeSetup, savePracticeSetup, getSavedNames, addSavedNames,
   saveCrackdownResult
 } from './solo.js';
 import { MultiGame } from './multi.js';
+import { TUTORIAL_SCENES, TutorialGame } from './tutorial.js';
 import { CrackdownGame, makeCrackdownLevel, nightOrdinal, CRACKDOWN_CONFIG } from './crackdown.js';
 import { Engine } from './engine.js';
 import {
@@ -30,11 +31,12 @@ const PAWN_COLORS = ['#c8312f', '#1f4e9a', '#3f7d4e', '#d9962b', '#7b4d8f'];
 // 전역 상태
 // ------------------------------------------------------------------
 const state = {
-  campaignLevels: [],
-  levelsById: {},
   game: null,
   level: null,
-  mode: null, // 'practice' | 'campaign' | 'endless' | 'crackdown'
+  mode: null, // 'practice' | 'tutorial' | 'endless' | 'crackdown'
+  tut: null,                           // 첫 걸음: { index(장면), sub(이야기 카드), stage · seen · person(주사위 장면), view }
+  tutFinishFor: null,                  // 정리 카드를 이미 예약한 장면(두 번 가지 않도록)
+  tutHintShown: null,                  // 말풍선 힌트가 새로 바뀌었을 때만 튀어나오게
   crackdownCards: null,                // data/crackdown.json({ stories, patterns })
   dayTimer: null,                      // 단속의 밤: 낮 단속을 한 칸씩 진행하는 타이머
   dayCell: null,                       // 방금 낮 단속이 지나간 칸과 결과({ cell, kind })
@@ -83,22 +85,212 @@ function renderTitleFlag() {
 }
 
 // ------------------------------------------------------------------
-// 첫 걸음 — 단계 목록(타이틀에서 바로 들어온다)
+// 첫 걸음 — 하나로 이어지는 과정(js/tutorial.js). 기획: docs/첫걸음_개편_시나리오.md
 // ------------------------------------------------------------------
-function renderCampaignList() {
-  const list = document.getElementById('campaign-level-list');
-  const progress = getCampaignProgress();
-  list.innerHTML = state.campaignLevels.map(function (lv, idx) {
-    const unlocked = isLevelUnlocked(state.campaignLevels, lv.id);
-    const rec = progress[lv.id];
-    const stars = rec ? rec.stars : 0;
-    const starStr = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-    return '<button class="level-row' + (unlocked ? '' : ' locked') + '" data-level="' + lv.id + '" ' + (unlocked ? '' : 'disabled') + '>' +
-      '<div class="num">' + (idx + 1) + '</div>' +
-      '<div class="info"><div class="t">' + lv.title + '</div><div class="m">' + (lv.tutorial ? '안내 단계' : (lv.nights + '밤')) + (rec ? ' · 최고 ' + rec.bestScore + '점' : '') + '</div></div>' +
-      '<div class="stars">' + (unlocked ? starStr : '🔒') + '</div>' +
+function tutSceneLabel(scene) {
+  return scene.num != null ? '장면 ' + scene.num + ' · ' + scene.title : scene.title;
+}
+
+// 진행 점: 지난 장면 · 지금 장면 · 남은 장면
+function tutDotsHtml(index) {
+  return TUTORIAL_SCENES.map(function (s, i) {
+    return '<span' + (i < index ? ' class="past"' : i === index ? ' class="on"' : '') + '></span>';
+  }).join('');
+}
+
+// 처음 화면: 마침 여부 · 이어 하기 · 처음부터 · 건너뛰기 · 장면 골라 보기
+function renderTutorialHome() {
+  const prog = getTutorialProgress();
+  const total = TUTORIAL_SCENES.length;
+  const last = total - 1;
+  let status;
+  if (prog.done) status = '<span class="done-tag">마침</span>첫 걸음을 마쳤어요. 언제든 다시 볼 수 있어요.';
+  else if (prog.reached < 0) status = '보드게임 규칙을 장면 하나에 개념 하나씩, 직접 놓아 보며 익혀요. 8 - 12분쯤 걸려요.';
+  else status = '<b>' + (prog.reached + 1) + ' / ' + total + '</b> 장면을 마쳤어요.';
+
+  let actions = '';
+  if (prog.done) {
+    actions += '<button class="primary" data-tut-start="0">처음부터 다시 보기</button>';
+  } else if (prog.reached < 0) {
+    actions += '<button class="primary" data-tut-start="0">시작하기</button>';
+  } else {
+    const nextIdx = Math.min(prog.reached + 1, last);
+    actions += '<button class="primary" data-tut-start="' + nextIdx + '">이어 하기 — ' + tutSceneLabel(TUTORIAL_SCENES[nextIdx]) + '</button>' +
+      '<button data-tut-start="0">처음부터</button>';
+  }
+  if (!prog.done) actions += '<button class="ghost" data-tut="skip">과정 건너뛰기</button>';
+
+  const rows = TUTORIAL_SCENES.map(function (scene, i) {
+    const unlocked = prog.done || i <= prog.reached + 1;
+    return '<button class="level-row' + (unlocked ? '' : ' locked') + '" data-tut-start="' + i + '" ' + (unlocked ? '' : 'disabled') + '>' +
+      '<div class="num">' + (scene.num != null ? scene.num : '끝') + '</div>' +
+      '<div class="info"><div class="t">' + scene.title + '</div><div class="m">' + scene.sub + '</div></div>' +
+      '<div class="mark">' + (i <= prog.reached ? '마침' : (unlocked ? '' : '🔒')) + '</div>' +
       '</button>';
   }).join('');
+
+  document.getElementById('tut-home').innerHTML =
+    '<div class="tut-status">' + status + '</div>' + actions +
+    '<p class="muted" style="margin:8px 0 0;">' + (prog.done ? '장면 골라 보기' : '장면 골라 보기 · 마친 장면과 다음 장면을 열 수 있어요') + '</p>' +
+    '<div class="tut-list">' + rows + '</div>';
+}
+
+function startTutorialScene(index) {
+  const scene = TUTORIAL_SCENES[index];
+  if (!scene) { showScreen('tutorial'); renderTutorialHome(); return; }
+  state.tut = { index: index, sub: 0, stage: 'colors', seen: {}, person: null, view: 'scene' };
+  if (scene.kind === 'play') { startGame(scene, 'tutorial'); return; }
+  showScreen('tutorial-card');
+  renderTutorialCard();
+}
+
+// 이야기 · 주사위 · 정리 카드
+function renderTutorialCard() {
+  const t = state.tut;
+  const scene = TUTORIAL_SCENES[t.index];
+  const isLast = t.index === TUTORIAL_SCENES.length - 1;
+  document.getElementById('tut-card-dots').innerHTML = tutDotsHtml(t.index);
+  const card = document.getElementById('tut-card');
+  const actionsEl = document.getElementById('tut-card-actions');
+  let html = '', actions = '';
+
+  if (t.view === 'summary') {
+    const sum = scene.summary || {};
+    html = '<div class="tut-eyebrow">정리</div><h2>' + scene.title + '</h2>';
+    if (scene.goal && state.game instanceof TutorialGame) {
+      const g = state.game;
+      html += '<div class="tut-result">' + (g.goalMet ? '목표 달성!' : '조금 아쉬워요') + '</div>' +
+        '<p class="tut-text center">' + g.score + '점 · 모둠 ' + g.sceneCombos + '개 · 태극기 ' + g.flags + '장</p>' +
+        '<p class="tut-text">' + (g.goalMet ? '배운 것을 혼자서도 잘 써냈어요.' : '목표를 못 채워도 괜찮아요. 다시 해 보거나 이대로 마칠 수 있어요.') + '</p>';
+    }
+    if (sum.dice) html += '<div class="tut-dice">' + sum.dice.map(function (d) { return dieIcon(d[0], d[1], 52); }).join('') + '</div>';
+    if (sum.text) html += '<p class="tut-text">' + sum.text + '</p>';
+    if (sum.extra) {
+      html += '<div class="tut-extra"><h3>' + sum.extra.title + '</h3><div class="tut-boards">' + sum.extra.boards.map(function (b) {
+        const board = [];
+        for (let i = 0; i < 9; i++) board.push(b.board[i] ? { color: b.board[i][0], value: b.board[i][1] } : null);
+        return '<div class="tut-board-row">' + miniBoard(board) + '<span>' + b.caption + '</span></div>';
+      }).join('') + '</div></div>';
+    }
+    const nextLabel = scene.goal && state.game instanceof TutorialGame && !state.game.goalMet ? '이대로 마치기' : '다음 장면';
+    actions = '<button class="primary" data-tut="summary-next">' + nextLabel + '</button>' +
+      '<button class="ghost" data-tut="retry">다시 해 보기</button>';
+  } else if (scene.kind === 'story') {
+    const lastCard = t.sub >= scene.cards.length - 1;
+    html = '<div class="tut-eyebrow">' + (scene.num != null ? '장면 ' + scene.num : '끝') + '</div><h2>' + scene.title + '</h2>' +
+      '<p class="tut-story">' + scene.cards[t.sub] + '</p>';
+    if (!lastCard) actions = '<button class="primary" data-tut="story-next">다음</button>';
+    else if (isLast) actions = '<button class="primary" data-tut="end-title">타이틀로</button><button class="ghost" data-tut="end-home">첫 걸음 다시 보기</button>';
+    else actions = '<button class="primary" data-tut="story-next">' + scene.button + '</button>';
+  } else if (scene.kind === 'dice') {
+    const colorsSeen = scene.dice.filter(function (d, i) { return !d.spy && t.seen[i]; }).length;
+    const colorsTotal = scene.dice.filter(function (d) { return !d.spy; }).length;
+    const texts = {
+      colors: '주사위 하나하나가 그날 찾아온 사람이에요. 눌러 보세요. <b>색</b>은 어떤 사람들이 모였는지 알려 줘요. (' + colorsSeen + '/' + colorsTotal + ')',
+      order: '<b>눈</b>은 2부터 6까지, 순서일 뿐이에요. 누가 더 높은 사람이 아니에요.',
+      spy: '그런데 한 명이 이상해요. 눌러 보세요.',
+      spyInfo: '1은 색과 상관없이 모두 <b>밀정</b>이에요. 밀정은 어떤 모둠에도 들어갈 수 없어요.'
+    };
+    html = '<div class="tut-eyebrow">장면 ' + scene.num + '</div><h2>' + scene.title + '</h2>' +
+      '<p class="tut-text">' + texts[t.stage] + '</p>' +
+      '<div class="tut-dice">' + scene.dice.map(function (d, i) {
+        return '<button data-tut-die="' + i + '" class="' + (t.person === i ? 'cur' : (t.seen[i] ? 'seen' : '')) + '" aria-label="' + (d.spy ? '밀정' : d.name) + '">' + dieIcon(d.color, d.value, 58) + '</button>';
+      }).join('') + '</div>';
+    let person = '주사위를 눌러 보세요.';
+    if (t.person != null) {
+      const d = scene.dice[t.person];
+      if (d.spy && t.stage === 'colors') person = '이 사람은 조금 뒤에 알아봐요. 먼저 네 색의 사람들을 만나 보세요.';
+      else if (d.spy) person = '<span class="nm">밀정</span><br>검은 중절모와 외투 차림으로 사람들 사이에 숨어 지켜보는 감시자예요.';
+      else person = '<span class="nm">' + d.name + '</span> · 눈 ' + d.value + '<br>' + d.group;
+    }
+    html += '<div class="tut-person">' + person + '</div>';
+    if (t.stage === 'order' || t.stage === 'spyInfo') actions = '<button class="primary" data-tut="dice-next">다음</button>';
+  }
+  card.innerHTML = html;
+  actionsEl.innerHTML = actions;
+}
+
+function onTutorialDieClick(i) {
+  const t = state.tut;
+  const scene = TUTORIAL_SCENES[t.index];
+  const d = scene.dice[i];
+  t.person = i;
+  Sound.play('select');
+  if (d.spy) {
+    if (t.stage === 'spy') t.stage = 'spyInfo';
+  } else {
+    t.seen[i] = true;
+    const allSeen = scene.dice.every(function (x, k) { return x.spy || t.seen[k]; });
+    if (t.stage === 'colors' && allSeen) t.stage = 'order';
+  }
+  renderTutorialCard();
+}
+
+// 장면을 마치면 정리 카드(이야기 장면은 바로 다음 장면)
+function finishTutorialScene() {
+  const t = state.tut;
+  saveTutorialSceneDone(t.index, false);
+  t.view = 'summary';
+  showScreen('tutorial-card');
+  renderTutorialCard();
+}
+
+function onTutorialAction(action) {
+  const t = state.tut;
+  Sound.play('tap');
+  if (action === 'skip') {
+    if (confirm('첫 걸음을 건너뛸까요? 건너뛰어도 "마침"으로 표시되고, 언제든 다시 볼 수 있어요.')) { skipTutorial(); renderTutorialHome(); }
+    return;
+  }
+  if (action === 'coach-next') {
+    const g = state.game;
+    const before = soundState();
+    if (g.next()) { playActionSounds(before); renderGame(); }
+    return;
+  }
+  if (action === 'coach-retry') { startTutorialScene(t.index); return; }
+  if (action === 'retry') { startTutorialScene(t.index); return; }
+  if (action === 'story-next') {
+    const scene = TUTORIAL_SCENES[t.index];
+    if (t.sub < scene.cards.length - 1) { t.sub++; renderTutorialCard(); return; }
+    saveTutorialSceneDone(t.index, false);
+    startTutorialScene(t.index + 1);
+    return;
+  }
+  if (action === 'dice-next') {
+    if (t.stage === 'order') { t.stage = 'spy'; t.person = null; renderTutorialCard(); return; }
+    if (t.stage === 'spyInfo') { finishTutorialScene(); return; }
+    return;
+  }
+  if (action === 'summary-next') { startTutorialScene(t.index + 1); return; }
+  if (action === 'end-title' || action === 'end-home') {
+    saveTutorialSceneDone(t.index, true);
+    toast('첫 걸음을 마쳤어요');
+    if (action === 'end-title') { showScreen('title'); return; }
+    showScreen('tutorial'); renderTutorialHome();
+  }
+}
+
+// 첫 걸음 놀이 장면: 코치 말풍선(장면 · 진행 점 · 할 말 · 힌트 · [다음] · [다시 하기])
+function renderCoach(g) {
+  const el = document.getElementById('coach');
+  if (state.mode !== 'tutorial') { el.hidden = true; return; }
+  const scene = g.scene;
+  const c = g.coach();
+  let text = c.text;
+  if (!g.step && scene.goal) {
+    text = g.done ? '세 밤이 지났어요.' : '목표: <b>모둠 ' + scene.goal.combos + '개</b> 또는 <b>' + scene.goal.score + '점</b> · 지금 모둠 ' + g.sceneCombos + '개 · ' + g.score + '점';
+  } else if (g.finished) {
+    text = '장면을 마쳤어요.';
+  }
+  const freshHint = c.hint && c.hint !== state.tutHintShown;
+  state.tutHintShown = c.hint;
+  el.innerHTML = '<div class="coach-head"><span class="coach-scene">' + tutSceneLabel(scene) + '</span><span class="tut-dots">' + tutDotsHtml(state.tut ? state.tut.index : 0) + '</span></div>' +
+    '<div class="coach-text">' + text + '</div>' +
+    (c.hint ? '<div class="coach-hint' + (freshHint ? ' fresh' : '') + '">' + c.hint + '</div>' : '') +
+    '<div class="coach-actions"><button data-tut="coach-retry">다시 하기</button>' +
+    (c.canNext ? '<button class="primary" data-tut="coach-next">다음</button>' : '') + '</div>';
+  el.hidden = false;
 }
 
 // 주사위 속 사람들(룰북 v1.1): 색마다 어떤 사람들이 모였는지, 눈 2~6이 누구인지
@@ -173,7 +365,7 @@ function renderRules() {
     </div>
     <div class="rules-block">
       <h3>네 가지 놀이 방법</h3>
-      <p><b>첫 걸음</b> — 미션을 하나씩 풀며 규칙을 익혀요. 별을 모아 다음 단계를 열어요.<br>
+      <p><b>첫 걸음</b> — 장면 하나에 개념 하나씩, 직접 놓아 보며 규칙을 익혀요.<br>
       <b>스무하루의 밤</b> — 2·8 독립선언부터 3월 1일 새벽까지, 이야기와 함께 스물한 밤을 버텨요.<br>
       <b>단속의 밤</b> — 낮마다 오는 단속을 피해 숨겨 둔 태극기를 지키며 여덟 밤을 보내요.<br>
       <b>자유 연습</b> — 3~5명이 AI나 친구와 함께 여덟 밤을 겨뤄요. 친구와는 한 기기를 돌려 가며 둬요.</p>
@@ -272,13 +464,16 @@ function startGame(level, mode, seats) {
   clearTimeout(state.dayTimer); state.dayTimer = null;
   if (mode === 'practice') state.game = new MultiGame(level, seats);
   else if (mode === 'crackdown') state.game = new CrackdownGame(level, state.crackdownCards);
+  else if (mode === 'tutorial') state.game = new TutorialGame(level);
   else state.game = new SoloGame(level, mode, {});
+  state.tutFinishFor = null;
+  state.tutHintShown = null;
   state.lastTurnId = null;
   state.pulseCell = null;
   state.dayCell = null;
   state.storyPopupKey = null;
   clearTimeout(state.track.timer); state.track.timer = null; state.track.game = null;
-  state.returnScreen = mode === 'campaign' ? 'campaign-list' : 'title';
+  state.returnScreen = mode === 'tutorial' ? 'tutorial' : 'title';
   // 스무하루의 밤은 ← 대신 '종료'(점수 기록 후 끝내기)
   document.getElementById('btn-game-exit').hidden = mode === 'endless';
   document.getElementById('btn-game-quit').hidden = mode !== 'endless';
@@ -289,7 +484,6 @@ function startGame(level, mode, seats) {
   document.getElementById('cd-status').innerHTML = '';
   document.getElementById('cd-panel').dataset.key = '';
   renderGame();
-  if (mode === 'campaign') openMissionModal(); // 단계 시작 때 미션 설명을 먼저 보여 준다
 }
 
 function currentHintsEnabled() {
@@ -318,11 +512,16 @@ function renderGame() {
 
   document.getElementById('score-badge').textContent = snap.score + '점';
   document.getElementById('game-message').textContent = snap.message;
+  document.getElementById('game-message').hidden = state.mode === 'tutorial'; // 첫 걸음은 코치 말풍선이 대신한다
   renderPlayersBar(snap);
   renderScoreTrack(snap);
   renderCrackdown(snap);
 
-  renderMission(g, snap);
+  renderCoach(g);
+  // 첫 걸음: 지금 단계에서 강조할 주사위 · 칸 · 조각, 틀렸을 때 흔들 대상
+  const tut = state.mode === 'tutorial' ? g.targets() : null;
+  const shake = state.mode === 'tutorial' ? g.shake : null;
+  if (shake) g.shake = null;
 
   // 단속의 밤: 이번 낮에 밀정이 올 칸(낮 단속 중이면 아직 지나가지 않은 칸만)
   let cdMarks = [];
@@ -346,10 +545,16 @@ function renderGame() {
     }
     if (state.dayCell && state.dayCell.cell === i) classes.push(state.dayCell.kind === 'spy' ? 'cd-hit' : 'cd-saved');
     if (snap.phase === 'place' && snap.selectedPi != null && snap.validCells.indexOf(i) >= 0) {
-      classes.push('valid');
-      if (showScatterHint && g.wouldScatterAt(snap.selectedPi, i)) classes.push('scatter-warn');
+      if (tut && tut.cells.length) {
+        if (tut.cells.indexOf(i) >= 0) classes.push('valid', 'tut-target');
+      } else {
+        classes.push('valid');
+        if (showScatterHint && g.wouldScatterAt(snap.selectedPi, i)) classes.push('scatter-warn');
+      }
     }
     if (snap.phase === 'combo_keep' && snap.keepLine && snap.keepLine.indexOf(i) >= 0) classes.push('choosable');
+    if (tut && tut.keep.indexOf(i) >= 0) classes.push('tut-target');
+    if (shake && shake.kind === 'cell' && shake.id === i) classes.push('shake');
     if ((snap.phase === 'combo_eye' || snap.phase === 'blocked_eye') && snap.eyeOptions && snap.eyeOptions.indexOf(i) >= 0) classes.push('choosable');
     if (state.pulseCell === i) classes.push('pulse');
     boardHtml += '<div class="' + classes.join(' ') + '" data-cell="' + i + '">' + (die ? dieIcon(die.color, die.value, 50) : '') + mark + '</div>';
@@ -362,7 +567,10 @@ function renderGame() {
   const poolEl = document.getElementById('pool');
   const poolClickable = !snap.isAiTurn && (snap.phase === 'place' || snap.phase === 'blocked_pool');
   poolEl.innerHTML = snap.pool.map(function (d, i) {
-    const sel = snap.phase === 'place' && snap.selectedPi === i ? ' selected' : '';
+    let sel = snap.phase === 'place' && snap.selectedPi === i ? ' selected' : '';
+    if (tut && tut.dice.indexOf(i) >= 0) sel += ' tut-target';
+    else if (tut && tut.locked) sel += ' tut-dim';
+    if (shake && shake.kind === 'die' && shake.id === i) sel += ' shake';
     return '<button class="die-btn' + sel + '" data-pi="' + i + '" ' + (poolClickable ? '' : 'disabled') + '>' + dieIcon(d.color, d.value, 54, { selected: snap.selectedPi === i }) + '</button>';
   }).join('');
   const nightLabel = state.mode === 'endless' ? nightDate(snap.night) + ' 밤' : snap.night + '/' + snap.maxNights + '번째 밤';
@@ -380,8 +588,8 @@ function renderGame() {
 
   // 오버레이(모둠 순서 · 조각 고르기)
   const overlay = document.getElementById('overlay-panel');
-  if (snap.isAiTurn) {
-    overlay.hidden = true; // AI의 선택은 화면에 묻지 않는다
+  if (snap.isAiTurn || (tut && !g.overlayAllowed())) {
+    overlay.hidden = true; // AI의 선택은 화면에 묻지 않는다. 첫 걸음은 설명하는 동안 숨긴다
   } else if (snap.phase === 'combo_order') {
     overlay.hidden = false;
     overlay.innerHTML = '<p>' + snap.message + '</p><div class="opt-row">' + snap.comboOrderOptions.map(function (o) {
@@ -397,14 +605,21 @@ function renderGame() {
       '<div class="ov-label">지금 가진 조각</div><div class="record-sheet">' + recordSheetHtml(snap.parts, snap.flags, snap.pushed) + '</div>' +
       '<div class="opt-row">' + snap.rewardOptions.map(function (key) {
         const n = snap.parts[key];
-        return '<button class="piece-btn' + (n === minCount ? ' need' : '') + '" data-reward="' + key + '"><span class="ic">' + pieceIcon(key, 28, true) + '</span>' +
+        const tutCls = (tut && tut.rewards.indexOf(key) >= 0 ? ' tut-target' : '') + (shake && shake.kind === 'reward' && shake.id === key ? ' shake' : '');
+        return '<button class="piece-btn' + (n === minCount ? ' need' : '') + tutCls + '" data-reward="' + key + '"><span class="ic">' + pieceIcon(key, 28, true) + '</span>' +
           PIECE_NAME[key] + '<span class="cnt">' + n + '개</span></button>';
       }).join('') + '</div>';
   } else {
     overlay.hidden = true;
   }
 
-  if (snap.done) {
+  if (snap.done && state.mode === 'tutorial') {
+    // 첫 걸음: 남은 말풍선까지 다 넘기면 정리 카드로
+    if (g.finished && state.tutFinishFor !== g) {
+      state.tutFinishFor = g;
+      setTimeout(function () { if (state.game === g && state.mode === 'tutorial') finishTutorialScene(); }, 900);
+    }
+  } else if (snap.done) {
     // 단속의 밤에서 태극기를 다 빼앗기면, 압수 연출을 잠깐 보여 준 뒤 넘어간다
     const delay = snap.crackdown && snap.crackdown.failed ? 1600 : 450;
     if (state.dawnFor !== g) { state.dawnFor = g; setTimeout(goToDawn, delay); }
@@ -755,45 +970,7 @@ function renderStoryPanel(snap) {
       '</details>' : '');
 }
 
-// 첫 걸음 미션 카드: 별1 목표의 진행 · 별 기준 · 단계 안내
-function renderMission(g, snap) {
-  const el = document.getElementById('mission');
-  if (state.mode !== 'campaign') { el.hidden = true; return; }
-  const level = state.level;
-  const p = g.goalProgress();
-  const stars = level.stars || [];
-
-  let goal, prog;
-  if (p.type === 'flags') { goal = '태극기 ' + p.target + '장 완성'; prog = p.current + '/' + p.target; }
-  else if (p.type === 'combo') { goal = COMBO_NAME[p.combo] + ' ' + p.target + '번 이루기'; prog = p.current + '/' + p.target; }
-  else if (p.type === 'noScatter') { goal = '흩어짐 없이 마치기'; prog = p.met ? '' : '흩어짐 ' + p.current + '번'; }
-  else { goal = p.target + '점 이상'; prog = p.current + '/' + p.target; }
-  // noScatter는 끝나야 달성이 확정되고, 한 번 흩어지면 실패가 확정된다.
-  const met = p.type === 'noScatter' ? (snap.done && p.met) : p.met;
-  const failed = p.type === 'noScatter' && !p.met;
-
-
-  const steps = [
-    { label: '★ 미션', on: met },
-    stars.length > 1 ? { label: '★★ ' + stars[1] + '점', on: snap.score >= stars[1] } : null,
-    stars.length > 2 ? { label: '★★★ ' + stars[2] + '점', on: snap.score >= stars[2] } : null
-  ].filter(Boolean);
-
-  const hasHelp = !!(level.intro || (level.tips && level.tips.length));
-  let html = '<div class="mission-head">' +
-    '<span class="tag">' + (met ? '달성' : '미션') + '</span>' +
-    '<span class="goal">' + goal + (prog ? '<span class="prog">' + prog + '</span>' : '') + '</span>' +
-    (hasHelp ? '<button class="help-btn" id="mission-help" aria-haspopup="dialog" aria-label="미션 설명 보기">?</button>' : '') +
-    '</div>' +
-    '<div class="star-steps">' + steps.map(function (s) { return '<span' + (s.on ? ' class="on"' : '') + '>' + s.label + '</span>'; }).join('') + '</div>';
-  el.innerHTML = html;
-  el.classList.toggle('met', met);
-  el.classList.toggle('failed', failed);
-  el.classList.toggle('has-help', hasHelp);
-  el.hidden = false;
-}
-
-// 안내 팝업(미션 설명 · 이야기 카드 공용): 제목 · 강조 한 줄 · 본문 HTML
+// 안내 팝업(이야기 카드 · 단속 카드 공용): 제목 · 강조 한 줄 · 본문 HTML
 // buttonOnly: 바깥을 눌러도 닫히지 않고 닫기 버튼으로만 닫힘(밤마다 뜨는 이야기 팝업)
 function openInfoModal(title, tag, bodyHtml, buttonOnly) {
   document.getElementById('info-modal-title').textContent = title;
@@ -806,16 +983,6 @@ function openInfoModal(title, tag, bodyHtml, buttonOnly) {
 
 function closeInfoModal() {
   document.getElementById('info-modal').hidden = true;
-}
-
-// 미션 설명 팝업: 단계 이름 · 목표 · 별 기준 · 안내(intro · tips)
-function openMissionModal() {
-  const level = state.level;
-  if (!level) return;
-  const idx = state.campaignLevels.findIndex(function (l) { return l.id === level.id; });
-  openInfoModal((idx >= 0 ? (idx + 1) + '단계 · ' : '') + level.title, goalDescription(level),
-    (level.intro ? '<p>' + level.intro + '</p>' : '') +
-    (level.tips && level.tips.length ? '<ul>' + level.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' : ''));
 }
 
 function renderRecordSheet(parts, flagsDone, pushed) {
@@ -869,6 +1036,7 @@ function playActionSounds(before) {
   const b = before.stats, a = after.stats;
   const changed = ['placements', 'same', 'consec', 'color', 'scatterLines', 'withdrawn', 'blocked', 'eyesRemoved']
     .some(function (k) { return a[k] !== b[k]; }) || after.pieces !== before.pieces || after.night !== before.night;
+  if (state.mode === 'tutorial') tutorialEventToast(before, after);
   if (!changed) { Sound.play('select'); return; } // 남길 사람 고르기 등
   // 놓은 소리 뒤에 결과 소리를 하나씩 이어 친다(동시에 시작하면 북이 뭉개진다).
   let d = 0;
@@ -884,6 +1052,19 @@ function playActionSounds(before) {
   if (!after.done && after.night > before.night) Sound.play('night', d + 0.3);
 }
 
+// 첫 걸음: 방금 일어난 일(모둠 · 흩어짐 · 감시 철수 · 밀정 쫓아냄)의 이름을 짧게 띄운다
+function tutorialEventToast(before, after) {
+  const b = before.stats, a = after.stats;
+  const msgs = [];
+  if (a.cross > b.cross) msgs.push('교차 완성!');
+  ['color', 'consec', 'same'].forEach(function (k) { if (a[k] > b[k]) msgs.push(COMBO_NAME[k] + '!'); });
+  if (a.eyesRemoved > b.eyesRemoved) msgs.push('밀정을 쫓아냄 +1');
+  if (a.scatterLines > b.scatterLines) msgs.push('흩어짐');
+  if (a.withdrawn > b.withdrawn) msgs.push('감시 철수');
+  if (after.flags > before.flags) msgs.push('태극기 완성 +1');
+  if (msgs.length) toast(msgs.join(' · '));
+}
+
 // ------------------------------------------------------------------
 // 게임 화면 — 입력
 // ------------------------------------------------------------------
@@ -894,7 +1075,7 @@ function onBoardClick(cell) {
   const before = soundState();
   if (snap.phase === 'place') {
     if (snap.selectedPi == null) return;
-    if (snap.validCells.indexOf(cell) < 0) return;
+    if (snap.validCells.indexOf(cell) < 0 && state.mode !== 'tutorial') return;
     if (g.placeAt(cell)) state.pulseCell = cell;
   } else if (snap.phase === 'combo_keep') {
     if (!snap.keepLine || snap.keepLine.indexOf(cell) < 0) return;
@@ -949,9 +1130,7 @@ function onOverlayClick(target) {
 // ------------------------------------------------------------------
 function goToDawn() {
   const g = state.game;
-  const level = state.level;
   const stars = g.starsEarned();
-  if (state.mode === 'campaign') saveCampaignResult(level.id, stars, g.score);
   state.endlessResult = state.mode === 'endless' ? saveEndlessResult(g.score, g.completed ? g.maxNights : g.night) : null;
   state.crackdownResult = state.mode === 'crackdown' ? saveCrackdownResult(g.finished ? g.hidden : 0, stars) : null;
   const crackdownFailed = state.mode === 'crackdown' && g.failed;
@@ -1011,7 +1190,6 @@ function onPaintClick(target) {
 function showDawnResult() {
   document.getElementById('dawn-skip').hidden = true;
   const g = state.game;
-  const level = state.level;
   const stars = g.starsEarned();
 
   const rankingEl = document.getElementById('dawn-ranking');
@@ -1040,12 +1218,7 @@ function showDawnResult() {
   const starsLineEl = document.getElementById('dawn-stars-line');
   const goalLineEl = document.getElementById('dawn-goal-line');
   starsLineEl.classList.remove('record');
-  if (state.mode === 'campaign') {
-    starsLineEl.textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-    starsLineEl.hidden = false;
-    goalLineEl.textContent = goalDescription(level);
-    goalLineEl.hidden = false;
-  } else if (state.mode === 'practice') {
+  if (state.mode === 'practice') {
     // 같은 점수가 있으면 동점 규칙을 알려 준다(룰북 §9)
     const st = g.standings();
     const tie = st.some(function (p, i) { return i > 0 && p.score === st[i - 1].score; });
@@ -1090,20 +1263,6 @@ function showDawnResult() {
     storyEl.hidden = true;
   }
 
-  const nextBtn = document.getElementById('btn-dawn-next');
-  if (state.mode === 'campaign') {
-    const idx = state.campaignLevels.findIndex(function (l) { return l.id === level.id; });
-    const next = state.campaignLevels[idx + 1];
-    if (next && stars >= 1) {
-      nextBtn.hidden = false;
-      nextBtn.onclick = function () { startGame(next, 'campaign'); };
-    } else {
-      nextBtn.hidden = true;
-    }
-  } else {
-    nextBtn.hidden = true;
-  }
-
   document.getElementById('dawn-result').hidden = false;
   renderDawnTrack();
 }
@@ -1128,18 +1287,6 @@ function positionDawnTrack() {
   positionPawns(el.querySelector('.trk'), players, shown);
 }
 
-function goalDescription(level) {
-  const goal = level.goal || { type: 'score' };
-  const stars = level.stars || [];
-  let g;
-  if (goal.type === 'flags') g = '목표: 태극기 ' + (goal.count || 1) + '장';
-  else if (goal.type === 'combo') g = '목표: ' + COMBO_NAME[goal.combo] + ' ' + (goal.count || 1) + '회';
-  else if (goal.type === 'noScatter') g = '목표: 흩어짐 없이 마치기';
-  else g = '목표: 점수 ' + (stars[0] || 1) + '점 이상';
-  if (stars.length >= 3) g += ' · ★' + stars[0] + ' ★★' + stars[1] + ' ★★★' + stars[2];
-  return g;
-}
-
 // ------------------------------------------------------------------
 // 초기화 · 이벤트 연결
 // ------------------------------------------------------------------
@@ -1149,7 +1296,7 @@ function wireStaticEvents() {
     if (nav) {
       Sound.play('tap');
       const target = nav.dataset.nav;
-      if (target === 'campaign-list') renderCampaignList();
+      if (target === 'tutorial') renderTutorialHome();
       if (target === 'rules') renderRules();
       if (target === 'settings') renderSettings();
       if (target === 'practice-setup') renderPracticeSetup();
@@ -1158,12 +1305,12 @@ function wireStaticEvents() {
       showScreen(target);
       return;
     }
-    const levelBtn = e.target.closest('[data-level]');
-    if (levelBtn && !levelBtn.disabled) {
-      const lv = state.levelsById[levelBtn.dataset.level];
-      if (lv) startGame(lv, 'campaign');
-      return;
-    }
+    const tutStart = e.target.closest('[data-tut-start]');
+    if (tutStart && !tutStart.disabled) { Sound.play('tap'); startTutorialScene(Number(tutStart.dataset.tutStart)); return; }
+    const tutBtn = e.target.closest('[data-tut]');
+    if (tutBtn) { onTutorialAction(tutBtn.dataset.tut); return; }
+    const tutDie = e.target.closest('[data-tut-die]');
+    if (tutDie) { onTutorialDieClick(Number(tutDie.dataset.tutDie)); return; }
     const countBtn = e.target.closest('#setup-count button');
     if (countBtn) {
       state.practiceSetup.count = Number(countBtn.dataset.count);
@@ -1177,7 +1324,6 @@ function wireStaticEvents() {
       Sound.play('tap'); renderPracticeSetup(); return;
     }
     if (e.target.closest('#btn-practice-start')) { startPractice(); return; }
-    if (e.target.closest('#mission.has-help')) { Sound.play('tap'); openMissionModal(); return; }
     if (e.target.closest('#btn-night-story')) {
       document.getElementById('story-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
@@ -1195,10 +1341,17 @@ function wireStaticEvents() {
   });
 
   document.getElementById('btn-game-exit').addEventListener('click', function () {
-    if (confirm('지금 나가면 이번 밤의 진행은 저장되지 않아요. 나가시겠어요?')) {
-      showScreen(state.returnScreen === 'campaign-list' ? 'campaign-list' : 'title');
-      if (state.returnScreen === 'campaign-list') renderCampaignList();
+    const msg = state.mode === 'tutorial' ? '장면을 나가면 다음에 이 장면을 처음부터 다시 해요. 나가시겠어요?' : '지금 나가면 이번 밤의 진행은 저장되지 않아요. 나가시겠어요?';
+    if (confirm(msg)) {
+      showScreen(state.returnScreen);
+      if (state.returnScreen === 'tutorial') renderTutorialHome();
     }
+  });
+
+  document.getElementById('btn-tut-card-exit').addEventListener('click', function () {
+    Sound.play('tap');
+    showScreen('tutorial');
+    renderTutorialHome();
   });
 
   document.getElementById('btn-game-quit').addEventListener('click', function () {
@@ -1222,7 +1375,6 @@ function wireStaticEvents() {
     if (state.mode === 'practice') startGame(makePracticeLevel(), 'practice', state.practiceSeats);
     else if (state.mode === 'endless') startGame(makeEndlessLevel(), 'endless');
     else if (state.mode === 'crackdown') startCrackdown();
-    else startGame(state.level, 'campaign');
   });
 
   document.getElementById('btn-dawn-home').addEventListener('click', function () {
@@ -1261,13 +1413,6 @@ function wireStaticEvents() {
   document.addEventListener('visibilitychange', function () { Sound.setHidden(document.hidden); });
 }
 
-async function loadLevels() {
-  const res = await fetch('data/levels.json');
-  const levels = await res.json();
-  state.campaignLevels = levels;
-  levels.forEach(function (lv) { state.levelsById[lv.id] = lv; });
-}
-
 async function loadCrackdownCards() {
   const res = await fetch('data/crackdown.json');
   state.crackdownCards = await res.json();
@@ -1294,7 +1439,6 @@ async function init() {
   renderTitleFlag();
   wireStaticEvents();
   showScreen('title');
-  try { await loadLevels(); } catch (e) { /* 목록이 없어도 자유 연습은 동작 */ }
   try { await loadCrackdownCards(); } catch (e) { /* 단속의 밤을 시작할 때 다시 시도 */ }
   registerServiceWorker();
 }
