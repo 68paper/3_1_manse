@@ -11,7 +11,12 @@
  *
  * 규칙 추가(룰북 v1.1 「밀정을 쫓아냄」): 한뜻 모둠으로 판의 밀정(1)을
  * 쫓아내면 1점. 그래서 scoreOf()에 p.pushed(쫓아낸 1의 수)를 더하고, chooseComboEye()에서 센다.
- * 감시 철수 · 배치 불가로 빠진 1에는 점수가 없다. 그 외에는 아무것도 바꾸지 않았다.
+ * 감시 철수 · 배치 불가로 빠진 1에는 점수가 없다.
+ *
+ * 고르는 순서(startRound): 점수 · 도착 순서까지 같은 사람들(첫 밤에는 모두)의 순서를
+ * 공정하게 무작위로 정한다. 원본은 정렬 비교에 난수를 써서 3명 이상이면 앞자리가
+ * 먼저 고르는 쪽으로 치우쳤다(3명: 44% · 19% · 37%). 1명일 때는 난수를 쓰지 않아
+ * 혼자 하는 모드의 결과(같은 시드 = 같은 광장)는 그대로다. 그 외에는 아무것도 바꾸지 않았다.
  *
  * 원본: 3_1_만세_전야_웹_테스트판_v0_9_9.html의 첫 번째 <script> (TG_ENGINE)
  * 기준 룰북: docs/3·1 만세 전야 룰북_v1_1.md
@@ -175,11 +180,18 @@
     var maxRounds = g.settings.maxRounds || 8;
     if (g.round >= maxRounds) { return endGame(g); }
     g.round++;
-    var firstPass = g.players.slice().sort(function (a, b) {
+    // 먼저 고르게 섞어 둔 뒤(Fisher-Yates) 점수 · 도착 순서로 안정 정렬한다.
+    // 그래서 점수와 도착 순서가 모두 같은 사람들끼리는 무작위 순서가 된다(룰북: 첫 순서는 무작위)
+    var shuffled = g.players.slice();
+    for (var si = shuffled.length - 1; si > 0; si--) {
+      var sj = Math.floor(g.rng() * (si + 1));
+      var tmp = shuffled[si]; shuffled[si] = shuffled[sj]; shuffled[sj] = tmp;
+    }
+    var firstPass = shuffled.sort(function (a, b) {
       if (a.score !== b.score) return a.score - b.score;
       // 룰북 v0.9.9: 같은 칸에서는 위에 올라선 말(나중 도착)이 앞선다 → 아래 말(먼저 도착)이 먼저 고른다
       if (a.arrival !== b.arrival) return a.arrival - b.arrival;
-      return g.rng() - 0.5;
+      return 0;
     }).map(function (p) { return p.id; });
     g.order = firstPass;
     g.orderAt = 0;

@@ -2,7 +2,7 @@
  * sw.js — 오프라인 캐시
  * 버전(CACHE_NAME)을 올리면 이전 캐시는 activate 단계에서 정리된다.
  */
-const CACHE_NAME = 'manse-eve-v18';
+const CACHE_NAME = 'manse-eve-v21';
 const PRECACHE = [
   './',
   './index.html',
@@ -17,6 +17,15 @@ const PRECACHE = [
   './js/multi.js',
   './js/crackdown.js',
   './js/tutorial.js',
+  './js/firstRoll.js',
+  // 기기끼리 함께하기(시험판): 오프라인에서도 열려야 하므로 QR 도구까지 미리 저장
+  './link.html',
+  './js/link/rtc.js',
+  './js/link/qr.js',
+  './js/link/netgame.js',
+  './js/link/linkui.js',
+  './vendor/qrcode-generator.mjs',
+  './vendor/jsQR.min.js',
   './data/crackdown.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
