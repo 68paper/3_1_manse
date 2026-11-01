@@ -79,7 +79,8 @@ export function buildCrackdownDeck(data, seed, cfg) {
     .concat(patterns('final', Math.max(0, late.length - cfg.LATE_CARDS)));
   return early.concat(late).map(function (s, i) {
     return {
-      id: s.id, name: s.name, background: s.background, period: s.period, pile: s.pile,
+      // 이름 · 배경 · 시기는 texts/crackdown.md에서 채운다(ui.js loadCrackdownCards). 글이 없으면(시뮬레이션 등) 아이디로
+      id: s.id, name: s.name || s.id, background: s.background || '', period: s.period || '', pile: s.pile,
       cells: (cells[i] || []).map(function (n) { return n - 1; }).sort(function (a, b) { return a - b; })
     };
   });

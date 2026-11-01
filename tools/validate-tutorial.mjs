@@ -11,7 +11,11 @@
  * 실행: node tools/validate-tutorial.mjs
  * 외부 패키지 없음. Node 18+ (ES modules) 필요.
  */
-import { TUTORIAL_SCENES, TutorialGame } from '../js/tutorial.js';
+import { TUTORIAL_SCENES, TutorialGame, sceneTitle } from '../js/tutorial.js';
+import { loadTextsFromDisk } from './texts-node.mjs';
+import { hasText } from '../js/texts.js';
+
+loadTextsFromDisk(); // 힌트 · 말풍선 글(texts/tutorial.md)
 
 // 시나리오(docs/첫걸음_개편_시나리오.md)대로 두었을 때의 기대값
 const EXPECT = {
@@ -36,6 +40,7 @@ function playScripted(scene) {
   while (g.step && guard-- > 0) {
     const step = g.step;
     const at = '단계 ' + (g.stepIndex + 1);
+    if (!hasText(g.stepKey + '.say')) fail(scene, at + ' 말풍선 글이 없음: ' + g.stepKey + '.say');
     if (step.next) {
       if (!g.next()) { fail(scene, at + ' [다음]이 먹지 않음'); return g; }
       continue;
@@ -48,6 +53,7 @@ function playScripted(scene) {
         const wrongPi = g.pool.findIndex(function (d) { return !(d.color === step.move.die[0] && d.value === step.move.die[1]); });
         if (wrongPi >= 0) {
           if (g.selectDie(wrongPi) !== false || !g.hint) fail(scene, at + ' 틀린 주사위가 막히지 않음');
+          if (/⚠/.test(g.hint || '')) fail(scene, at + ' 힌트 글이 없음: ' + g.hint);
           if (g.targets().dice.length) fail(scene, at + ' 한 번 틀렸는데 정답을 강조함');
           g.selectDie(wrongPi);
           if (!g.targets().dice.length) fail(scene, at + ' 두 번 틀렸는데 정답을 강조하지 않음');
@@ -114,7 +120,7 @@ function playFree(g) {
 
 const lines = [];
 TUTORIAL_SCENES.forEach(function (scene) {
-  if (scene.kind !== 'play') { lines.push('· ' + scene.title + ' (' + scene.kind + ')'); return; }
+  if (scene.kind !== 'play') { lines.push('· ' + sceneTitle(scene) + ' (' + scene.kind + ')'); return; }
   const g = playScripted(scene);
   if (scene.goal) playFree(g);
   if (!g.finished) fail(scene, '단계를 다 지났는데 장면이 끝나지 않음(남은 단계 ' + (g.step ? g.stepIndex + 1 : '없음') + ', 판 끝남 ' + g.done + ')');
@@ -127,7 +133,7 @@ TUTORIAL_SCENES.forEach(function (scene) {
       if (got[k] !== exp[k]) fail(scene, k + ' 기대 ' + exp[k] + ', 실제 ' + got[k]);
     });
   }
-  lines.push('· ' + scene.title + ' — ' + g.score + '점 · 모둠 ' + g.sceneCombos + (scene.goal ? ' · 목표 ' + (g.goalMet ? '달성' : '미달') : ''));
+  lines.push('· ' + sceneTitle(scene) + ' — ' + g.score + '점 · 모둠 ' + g.sceneCombos + (scene.goal ? ' · 목표 ' + (g.goalMet ? '달성' : '미달') : ''));
 });
 
 console.log(lines.join('\n'));
