@@ -13,6 +13,7 @@ import { ConnLog, deviceSummary } from './connlog.js';
 import { Engine } from '../engine.js';
 import { dieIcon, pieceIcon } from '../art.js';
 import { nightDate } from '../story.js';
+import { quickRulesHtml, ensureQuickRulesStyle } from '../quickRules.js';
 import { randomSeed } from '../levelSetup.js';
 import { Sound } from '../audio.js';
 import { getSettings } from '../solo.js';
@@ -406,8 +407,7 @@ function renderPlay() {
   // 다른 사람들의 판: 둘이면 옆에, 셋 이상이면 내 판 아래에 줄지어
   const otherBoard = function (p, cls) {
     return '<div class="board-col' + (cls ? ' ' + cls : '') + '"><div class="board-label">' + esc(p.name) + ' · ' + p.score + '점</div>' +
-      boardHtml(p.board, 'theirs', { size: 30, pulse: net.lastSeat === p.id ? net.lastCell : null }) +
-      '<div class="board-pcs">' + piecesHtml(p.parts, 16) + '</div></div>';
+      boardHtml(p.board, 'theirs', { size: 30, pulse: net.lastSeat === p.id ? net.lastCell : null }) + '</div>';
   };
   let boards;
   if (n === 2) {
@@ -464,15 +464,13 @@ function renderRoll() {
     (canRestart ? '<button id="btn-again">' + (net.gatheredCount >= 2 ? '남은 ' + net.gatheredCount + '명으로 다시 시작' : '새 판(사람이 더 필요해요)') + '</button>' : '');
 }
 
-// 끝: 순위 · 점수 · 완성한 태극기 장수 · 모은 괘
+// 끝: 순위 · 점수 · 완성한 태극기 장수
 function resultHtml(game) {
   const st = game.standings();
-  const parts = {};
-  game.g.players.forEach(function (p) { parts[p.id] = p.parts; });
   return '<table class="result"><tr><th></th><th>이름</th><th>점수</th><th>태극기</th></tr>' +
     st.map(function (p, i) {
       return '<tr class="' + (i === 0 ? 'win' : '') + '"><td class="rk">' + (i + 1) + '위</td>' +
-        '<td>' + esc(p.name) + (p.id === state.net.mySeat ? ' (나)' : '') + '<div class="board-pcs">' + piecesHtml(parts[p.id], 16) + '</div></td>' +
+        '<td>' + esc(p.name) + (p.id === state.net.mySeat ? ' (나)' : '') + '</td>' +
         '<td class="n">' + p.score + '점</td><td class="n">' + p.flags + '장</td></tr>';
     }).join('') + '</table>' +
     '<p class="muted" style="text-align:center">점수 = 조각 수 + 완성한 태극기 장수 + 쫓아낸 밀정 수</p>';
@@ -617,6 +615,19 @@ function wire() {
   $('btn-invite').addEventListener('click', newInvite);
   $('btn-start').addEventListener('click', hostStart);
   $('btn-invite-cancel').addEventListener('click', cancelInvite);
+  // 게임 중 [규칙]: 모둠(조합) 규칙과 점수 규칙 팝업
+  $('btn-rules').addEventListener('click', function () {
+    Sound.play('tap');
+    ensureQuickRulesStyle();
+    $('rules-body').innerHTML = quickRulesHtml();
+    $('rules-modal').hidden = false;
+    // 닫기 버튼에 초점을 주되, 긴 내용이 아래로 밀려 내려가지 않게(맨 위부터 보이게)
+    $('btn-rules-close').focus({ preventScroll: true });
+    document.querySelector('#rules-modal .modal-card').scrollTop = 0;
+  });
+  $('btn-rules-close').addEventListener('click', function () { $('rules-modal').hidden = true; });
+  $('rules-modal').addEventListener('click', function (e) { if (e.target.id === 'rules-modal') $('rules-modal').hidden = true; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('rules-modal').hidden = true; });
   $('nights-seg').addEventListener('click', function (e) {
     const b = e.target.closest('[data-nights]');
     if (!b || !state.net) return;

@@ -15,6 +15,7 @@ import {
 import { MultiGame } from './multi.js';
 import { TUTORIAL_SCENES, TutorialGame } from './tutorial.js';
 import { FirstRoll, rollDie } from './firstRoll.js';
+import { quickRulesHtml, ensureQuickRulesStyle } from './quickRules.js';
 import { CrackdownGame, makeCrackdownLevel, nightOrdinal, CRACKDOWN_CONFIG } from './crackdown.js';
 import { Engine } from './engine.js';
 import {
@@ -1079,7 +1080,9 @@ function openInfoModal(title, tag, bodyHtml, buttonOnly) {
   document.getElementById('info-modal-body').innerHTML = bodyHtml;
   document.getElementById('info-modal').hidden = false;
   document.getElementById('info-modal').dataset.buttonOnly = buttonOnly ? '1' : '';
-  document.getElementById('info-modal-close').focus();
+  // 닫기 버튼에 초점을 주되, 긴 내용(규칙 한눈에 등)이 아래로 밀려 내려가지 않게 맨 위부터 보여 준다
+  document.getElementById('info-modal-close').focus({ preventScroll: true });
+  document.querySelector('#info-modal .modal-card').scrollTop = 0;
 }
 
 function closeInfoModal() {
@@ -1091,21 +1094,19 @@ function renderRecordSheet(parts, flagsDone, pushed) {
 }
 
 // 기록지: 태극 · 건 · 리 · 감 · 곤 다섯 칸 줄을 쌓은 모양(게임 화면 · 조각 고르는 창에서 함께 씀)
+// 룰북 「조각 기록하기」: 기록지에는 태극기 4장이 있고, 조각은 1번 태극기부터 그 조각의 빈자리에 찍는다.
+// 그래서 k번 줄의 한 자리는 그 조각을 k개 이상 모았을 때 찍혀 있다. 4장을 다 채우고도 더 들어온 조각은 넘친 조각.
+// 엔진은 다섯 조각이 모일 때마다 태극기로 세므로(4장 제한 없음), 완성한 장수가 4를 넘으면 그만큼 줄을 더 보여 준다.
+const RECORD_FLAGS = 4;
 function recordSheetHtml(parts, flagsDone, pushed) {
-  const counts = Object.assign({}, parts);
+  const most = Math.max.apply(null, PIECE_ORDER.map(function (k) { return parts[k] || 0; }));
+  const rowCount = Math.max(flagsDone || 0, Math.min(RECORD_FLAGS, Math.max(1, most)));
   const rows = [];
-  let rowIdx = 0;
-  while (rowIdx < flagsDone || (rowIdx === flagsDone && PIECE_ORDER.some(function (k) { return counts[k] > 0; }))) {
-    const row = PIECE_ORDER.map(function (k) {
-      if (counts[k] > 0) { counts[k]--; return { key: k, filled: true }; }
-      return { key: k, filled: false };
-    });
-    rows.push(row);
-    rowIdx++;
-    if (rowIdx >= flagsDone && !PIECE_ORDER.some(function (k) { return counts[k] > 0; })) break;
-    if (rowIdx > 6) break;
+  for (let r = 0; r < rowCount; r++) {
+    rows.push(PIECE_ORDER.map(function (k) { return { key: k, filled: (parts[k] || 0) > r }; }));
   }
-  if (rows.length === 0) rows.push(PIECE_ORDER.map(function (k) { return { key: k, filled: false }; }));
+  const counts = {};
+  PIECE_ORDER.forEach(function (k) { counts[k] = Math.max(0, (parts[k] || 0) - rowCount); });
   let html = rows.map(function (row, i) {
     return '<div class="record-row"><div class="flag-num">' + (i + 1) + '</div><div class="icons">' +
       row.map(function (c) { return pieceIcon(c.key, 26, c.filled); }).join('') +
@@ -1456,6 +1457,15 @@ function wireStaticEvents() {
     Sound.play('tap');
     showScreen('tutorial');
     renderTutorialHome();
+  });
+
+  // 게임 중 [규칙]: 모둠(조합) 규칙과 점수 규칙을 팝업으로(단속의 밤은 태극기 장 수)
+  document.getElementById('btn-game-rules').addEventListener('click', function () {
+    Sound.play('tap');
+    ensureQuickRulesStyle();
+    const cd = state.mode === 'crackdown';
+    openInfoModal('규칙 한눈에', cd ? '모둠 · 숨겨 둔 태극기' : '모둠 · 점수',
+      quickRulesHtml({ crackdown: cd, crackdownFlags: CRACKDOWN_CONFIG.FLAGS_PER_COMBO }));
   });
 
   document.getElementById('btn-game-quit').addEventListener('click', function () {
