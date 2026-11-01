@@ -1,6 +1,6 @@
 /*
- * 레벨 데이터(data/levels.json의 한 항목) → 엔진 설정/초기 배치.
- * 브라우저(js/solo.js)와 Node(tools/validate-levels.mjs) 양쪽에서 그대로 가져다 쓴다.
+ * 레벨 객체(스무하루의 밤 · 자유 연습 · 단속의 밤) → 엔진 설정/초기 배치.
+ * 브라우저(js/solo.js 등)와 Node(tools/simulate-crackdown.mjs) 양쪽에서 그대로 가져다 쓴다.
  * 판정 로직은 건드리지 않는다 — 여기서는 오직 "레벨 → 설정값" 변환만 한다.
  */
 
