@@ -14,6 +14,7 @@ import {
 } from './solo.js';
 import { MultiGame } from './multi.js';
 import { TUTORIAL_SCENES, TutorialGame } from './tutorial.js';
+import { FirstRoll, rollDie } from './firstRoll.js';
 import { CrackdownGame, makeCrackdownLevel, nightOrdinal, CRACKDOWN_CONFIG } from './crackdown.js';
 import { Engine } from './engine.js';
 import {
@@ -47,6 +48,8 @@ const state = {
   dawnPending: [],
   practiceSetup: getPracticeSetup(), // 자유 연습 자리 구성(인원 · 사람/AI · 이름)
   practiceSeats: null,               // 이번 판에 실제로 앉은 자리(다시 하기용)
+  roll: null,                        // 자유 연습 순서 정하기: { fr(FirstRoll), seats, spinning: { 자리: true } }
+  rollTimers: [],                    // 굴리는 연출 · AI가 굴리는 타이머
   aiTimer: null,
   lastTurnId: null,
   dawnFor: null,                       // 새벽 화면을 이미 예약한 판(두 번 가지 않도록)
@@ -65,6 +68,7 @@ function showScreen(name) {
   document.getElementById('info-modal').hidden = true;
   clearTimeout(state.aiTimer);
   clearTimeout(state.dayTimer); state.dayTimer = null;
+  clearRollTimers();
   document.body.classList.remove('is-day');
   window.scrollTo(0, 0);
 }
@@ -369,7 +373,7 @@ function renderRules() {
       <b>스무하루의 밤</b> — 2·8 독립선언부터 3월 1일 새벽까지, 이야기와 함께 스물한 밤을 버텨요.<br>
       <b>단속의 밤</b> — 낮마다 오는 단속을 피해 숨겨 둔 태극기를 지키며 여덟 밤을 보내요.<br>
       <b>자유 연습</b> — 3~5명이 AI나 친구와 함께 여덟 밤을 겨뤄요. 친구와는 한 기기를 돌려 가며 둬요.</p>
-      <p class="muted">여럿이 할 때는 밤마다 광장에 (인원×2+2)개를 꺼내요. 점수판 「3월 1일로 가는 길」에서 가장 뒤에 있는 사람부터 차례로 고르고, 같은 칸에 말이 쌓여 있으면 아래에 깔린 말이 먼저 골라요. 순서는 밤을 시작할 때 정해져 밤 도중에는 바뀌지 않아요. 여덟 밤 뒤 가장 앞선 사람이 이기고, 같은 칸이면 위에 올라선 말(나중에 도착한 말)이 앞서요.</p>
+      <p class="muted">여럿이 할 때는 밤마다 광장에 (인원×2+2)개를 꺼내요. 첫 밤에는 각자 주사위를 굴려 눈이 큰 사람부터 고르고(밀정은 가장 작은 눈, 같으면 다시 굴려요), 그다음 밤부터는 점수판 「3월 1일로 가는 길」에서 가장 뒤에 있는 사람부터 차례로 고르고, 같은 칸에 말이 쌓여 있으면 아래에 깔린 말이 먼저 골라요. 순서는 밤을 시작할 때 정해져 밤 도중에는 바뀌지 않아요. 여덟 밤 뒤 가장 앞선 사람이 이기고, 같은 칸이면 위에 올라선 말(나중에 도착한 말)이 앞서요.</p>
     </div>
     <div class="rules-block">
       <h3>단속의 밤</h3>
@@ -438,7 +442,104 @@ function startPractice() {
     .map(function (s) { return s.name.trim(); });
   if (typed.length) addSavedNames(typed);
   state.practiceSeats = seats;
-  startGame(makePracticeLevel(), 'practice', seats);
+  openFirstRoll(seats);
+}
+
+// ------------------------------------------------------------------
+// 자유 연습 — 첫 밤 순서 정하기(룰북 「게임 준비」 5): 각자 주사위를 굴려 눈이 큰 사람부터 1위
+// 한 기기를 돌려 가며 사람은 [굴리기]를 누르고, AI는 잠깐 뒤 스스로 굴린다. 같은 눈끼리는 다시 굴린다.
+// ------------------------------------------------------------------
+const ROLL_SPIN_MS = 650;
+
+function clearRollTimers() {
+  state.rollTimers.forEach(function (t) { clearTimeout(t); clearInterval(t); });
+  state.rollTimers = [];
+  if (state.roll) state.roll.spinning = {};
+}
+
+function openFirstRoll(seats) {
+  state.roll = { fr: new FirstRoll(seats.length), seats: seats, spinning: {} };
+  showScreen('first-roll');
+  renderFirstRoll();
+}
+
+function renderFirstRoll() {
+  const r = state.roll;
+  if (!r) return;
+  const fr = r.fr;
+  const ranks = fr.ranks();
+  const tied = fr.active.length && fr.history.some(function (h) { return h.length; }) ? fr.active : [];
+  const hint = document.getElementById('roll-hint');
+  if (fr.done) hint.textContent = '순서가 정해졌어요. 1위부터 첫 밤에 먼저 골라요.';
+  else if (tied.length) hint.innerHTML = '<b>' + tied.map(function (i) { return escapeHtml(r.seats[i].name); }).join(' · ') + '</b> 같은 눈! 이 사람들만 다시 굴려요.';
+  else hint.textContent = '각자 주사위를 굴려요. 눈이 큰 사람부터 첫 밤에 먼저 골라요. 밀정(1)은 가장 작은 눈이에요.';
+
+  // 다 정해지면 순위대로, 아니면 자리 순서대로
+  const rows = fr.done ? fr.order() : r.seats.map(function (s, i) { return i; });
+  const nextHuman = rows.find(function (i) { return fr.needs(i) && r.seats[i].type === 'human' && !r.spinning[i]; });
+  document.getElementById('roll-seats').innerHTML = rows.map(function (i) {
+    const seat = r.seats[i];
+    const face = fr.faces[i];
+    const spin = !!r.spinning[i];
+    const needs = fr.needs(i);
+    let right;
+    if (needs && seat.type === 'human') right = '<button class="' + (i === nextHuman ? 'primary' : '') + '" data-roll="' + i + '"' + (spin ? ' disabled' : '') + '>' + (fr.history[i].length ? '다시 굴리기' : '굴리기') + '</button>';
+    else if (needs) right = '<span class="wait">굴리는 중…</span>';
+    // 다시 굴린 사람은 처음 눈부터 보여 준다(예: 눈 3 → 6). 처음 눈이 같아 다시 굴린 것이므로
+    else right = '<span class="wait">' + (face ? '눈 ' + fr.history[i].join(' → ') : '') + '</span>';
+    const cls = 'roll-row' + (needs && i === nextHuman ? ' next' : '') + (tied.indexOf(i) >= 0 ? ' tie' : '');
+    return '<div class="' + cls + '" data-roll-row="' + i + '">' +
+      '<span class="rank">' + (ranks[i] && !needs ? ranks[i] + '위' : '') + '</span>' +
+      '<span class="who">' + pawnDot(i) + '<span class="nm">' + escapeHtml(seat.name) + '</span>' + (seat.type === 'ai' ? '<span class="ai">AI</span>' : '') + '</span>' +
+      '<span class="die-slot' + (face ? ' has' : '') + (spin ? ' spin' : '') + '">' + (face ? dieIcon(face.color, face.value, 46) : '') + '</span>' +
+      right + '</div>';
+  }).join('');
+  document.getElementById('btn-roll-start').hidden = !fr.done;
+  scheduleAiRolls();
+}
+
+// 굴리는 연출: 잠깐 여러 면이 바뀌다가 멈춘다. 결과는 미리 정해 두고 마지막에 적는다
+function rollFor(seat) {
+  const r = state.roll;
+  if (!r || !r.fr.needs(seat) || r.spinning[seat]) return;
+  r.spinning[seat] = true;
+  const result = rollDie();
+  renderFirstRoll();
+  const slotOf = function () { return document.querySelector('[data-roll-row="' + seat + '"] .die-slot'); };
+  const spinner = setInterval(function () {
+    const el = slotOf();
+    if (el) { const d = rollDie(); el.classList.add('has', 'spin'); el.innerHTML = dieIcon(d.color, d.value, 46); }
+  }, 90);
+  Sound.play('select');
+  state.rollTimers.push(spinner);
+  state.rollTimers.push(setTimeout(function () {
+    clearInterval(spinner);
+    if (state.roll !== r) return;
+    delete r.spinning[seat];
+    r.fr.roll(seat, result);
+    Sound.play(r.fr.done ? 'combo' : 'place');
+    renderFirstRoll();
+  }, ROLL_SPIN_MS));
+}
+
+// AI 자리는 사람이 다 굴린 뒤가 아니라, 자기 차례가 오면 하나씩 조금씩 늦게 굴린다
+function scheduleAiRolls() {
+  const r = state.roll;
+  if (!r || r.fr.done || r.aiPending) return;
+  const ai = r.fr.active.find(function (i) { return r.fr.needs(i) && r.seats[i].type === 'ai' && !r.spinning[i]; });
+  if (ai == null) return;
+  r.aiPending = true;
+  state.rollTimers.push(setTimeout(function () {
+    r.aiPending = false;
+    if (state.roll !== r) return;
+    rollFor(ai);
+  }, 450));
+}
+
+function startPracticeWithOrder() {
+  const r = state.roll;
+  if (!r || !r.fr.done) return;
+  startGame(makePracticeLevel(), 'practice', r.seats, r.fr.order());
 }
 
 // ------------------------------------------------------------------
@@ -457,12 +558,12 @@ function applySoundSettings() {
 // ------------------------------------------------------------------
 // 게임 화면 — 시작
 // ------------------------------------------------------------------
-function startGame(level, mode, seats) {
+function startGame(level, mode, seats, firstOrder) {
   clearTimeout(state.aiTimer);
   state.level = level;
   state.mode = mode;
   clearTimeout(state.dayTimer); state.dayTimer = null;
-  if (mode === 'practice') state.game = new MultiGame(level, seats);
+  if (mode === 'practice') state.game = new MultiGame(level, seats, firstOrder);
   else if (mode === 'crackdown') state.game = new CrackdownGame(level, state.crackdownCards);
   else if (mode === 'tutorial') state.game = new TutorialGame(level);
   else state.game = new SoloGame(level, mode, {});
@@ -1324,6 +1425,9 @@ function wireStaticEvents() {
       Sound.play('tap'); renderPracticeSetup(); return;
     }
     if (e.target.closest('#btn-practice-start')) { startPractice(); return; }
+    const rollBtn = e.target.closest('[data-roll]');
+    if (rollBtn && !rollBtn.disabled) { rollFor(Number(rollBtn.dataset.roll)); return; }
+    if (e.target.closest('#btn-roll-start')) { Sound.play('tap'); startPracticeWithOrder(); return; }
     if (e.target.closest('#btn-night-story')) {
       document.getElementById('story-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
@@ -1372,7 +1476,7 @@ function wireStaticEvents() {
   });
 
   document.getElementById('btn-dawn-again').addEventListener('click', function () {
-    if (state.mode === 'practice') startGame(makePracticeLevel(), 'practice', state.practiceSeats);
+    if (state.mode === 'practice') openFirstRoll(state.practiceSeats);
     else if (state.mode === 'endless') startGame(makeEndlessLevel(), 'endless');
     else if (state.mode === 'crackdown') startCrackdown();
   });

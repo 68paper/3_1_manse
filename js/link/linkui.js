@@ -165,6 +165,7 @@ function boardHtml(board, cls, opts) {
 function renderPlay() {
   const net = state.net;
   const body = $('play-body');
+  if (net && net.rolling) { renderRoll(); return; }
   if (!net || !net.game) { body.innerHTML = '<p class="muted">방장이 판을 여는 중…</p>'; return; }
   const g = net.g;
   const game = net.game;
@@ -233,9 +234,36 @@ function renderPlay() {
     '<p class="muted" style="text-align:center">시험판 · 판 확인 번호 ' + net.seq + (net.desync ? ' · 판이 어긋났어요' : '') + '</p>';
 }
 
+// 첫 밤 순서 정하기: 둘 다 주사위를 굴려 눈이 큰 사람이 먼저(같으면 다시)
+function renderRoll() {
+  const net = state.net;
+  const r = net.roll;
+  const online = state.link && !state.link.closed;
+  const ranks = r.ranks();
+  const tied = r.rerolls > 0 && !r.done && r.active.length;
+  $('night').textContent = '순서 정하기';
+  let turn;
+  if (net.myRollNeeded && online) turn = '<b>주사위를 굴려요.</b> 눈이 큰 사람이 첫 밤에 먼저 골라요(밀정은 가장 작은 눈).' + (tied ? ' 같은 눈이라 다시 굴려요!' : '');
+  else turn = online ? (tied ? '같은 눈이에요. ' : '') + '상대가 굴리기를 기다리는 중…' : '연결이 끊겨 진행할 수 없어요.';
+  const rows = [0, 1].map(function (seat) {
+    const face = r.faces[seat];
+    const name = net.names[seat] + (seat === net.mySeat ? ' (나)' : '');
+    const needs = r.needs(seat);
+    return '<div class="pl' + (needs ? ' cur' : '') + '" style="min-height:64px">' +
+      '<span class="nm">' + (ranks[seat] && !needs ? ranks[seat] + '위 · ' : '') + name + '</span>' +
+      (face ? dieIcon(face.color, face.value, 46) : '<span class="muted">' + (needs ? '굴릴 차례' : '') + '</span>') + '</div>';
+  }).join('');
+  $('play-body').innerHTML =
+    '<div class="turn' + (net.myRollNeeded && online ? '' : ' wait') + '">' + turn + '</div>' +
+    '<div class="stack">' + rows + '</div>' +
+    (net.myRollNeeded && online ? '<button class="primary" id="btn-roll">' + (r.history[net.mySeat].length ? '다시 굴리기' : '주사위 굴리기') + '</button>' : '');
+}
+
 function onPlayClick(e) {
   const net = state.net;
-  if (!net || !net.game) return;
+  if (!net) return;
+  if (e.target.closest('#btn-roll')) { net.rollMine(); return; }
+  if (!net.game) return;
   // 판이 끝나면 누구 차례도 아니므로, 새 판 버튼은 차례 확인보다 먼저 본다
   if (e.target.closest('#btn-again')) { net.start(randomSeed(), NAMES); return; }
   if (!net.isMyTurn || net.desync) return;

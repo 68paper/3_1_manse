@@ -162,6 +162,22 @@
   .seat-ai { flex: 1; opacity: .65; padding-left: 4px; }
   #btn-practice-start { margin-top: 6px; }
 
+  /* ---------- 자유 연습: 순서 정하기 ---------- */
+  .roll-seats { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 14px; }
+  .roll-row { display: flex; align-items: center; gap: 10px; border: 1.5px solid rgba(42,34,27,.3); border-radius: 12px; padding: 8px 10px; min-height: 64px; transition: background .2s; }
+  .roll-row.next { border-color: var(--tg-red); box-shadow: 0 0 0 1.5px var(--tg-red); background: var(--hanji); }
+  .roll-row.tie { background: rgba(224,161,0,.14); }
+  .roll-row .rank { font-family: var(--font-title); font-weight: 800; font-size: 17px; width: 34px; text-align: center; flex-shrink: 0; }
+  .roll-row .who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+  .roll-row .who .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .roll-row .who .ai { font-size: 10px; font-weight: 700; background: var(--tg-blue); color: var(--hanji); border-radius: 4px; padding: 0 4px; }
+  .roll-row .die-slot { width: 48px; height: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1.5px dashed rgba(42,34,27,.3); border-radius: 10px; }
+  .roll-row .die-slot.has { border: none; }
+  .roll-row .die-slot.spin .art-die { animation: rollSpin .12s linear infinite; }
+  @keyframes rollSpin { 0% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } 100% { transform: rotate(-8deg); } }
+  .roll-row button { min-height: 40px; padding: 8px 14px; font-size: 15px; flex-shrink: 0; }
+  .roll-row .wait { font-size: 12px; opacity: .6; width: 72px; text-align: center; flex-shrink: 0; }
+
   /* ---------- 규칙 보기 ---------- */
   .rules-block { margin-bottom: 14px; }
   .combo-example { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
@@ -446,6 +462,14 @@
     <datalist id="saved-names"></datalist>
     <p class="muted" id="setup-hint"></p>
     <button class="primary" id="btn-practice-start">시작하기</button>
+  </section>
+
+  <!-- 자유 연습: 첫 밤 순서 정하기(각자 주사위를 굴려 눈이 큰 사람부터) -->
+  <section class="screen" id="screen-first-roll" data-screen="first-roll">
+    <div class="topbar"><button class="btn-back" data-nav="practice-setup">←</button><div class="title">순서 정하기</div></div>
+    <p class="muted" id="roll-hint"></p>
+    <div id="roll-seats" class="roll-seats"></div>
+    <button class="primary" id="btn-roll-start" hidden>이 순서로 시작하기</button>
   </section>
 
   <!-- 첫 걸음: 과정 처음 화면(이어 하기 · 장면 목록 · 건너뛰기) -->

@@ -5,7 +5,10 @@
  * 같은 주사위를 뽑으므로, 판 전체가 아니라 "행동"만 주고받으면 두 기기의 판이 같아진다.
  *
  *   방장(자리 0)이 판정의 기준이다.
- *   - 시작: 방장이 시드를 정해 { type: 'start', seed, names }를 보낸다.
+ *   - 순서 정하기: 방장이 { type: 'roll-begin', names }를 보내면 둘 다 주사위를 굴린다.
+ *     굴리기는 방장이 대신 굴려 결과 { type: 'roll', seat, die }를 둘에게 알린다
+ *     (참가자는 { type: 'roll-intent' }만 보낸다). 같은 눈이면 다시 굴린다(js/firstRoll.js).
+ *   - 시작: 순서가 정해지면 방장이 시드를 정해 { type: 'start', seed, names, firstOrder }를 보낸다.
  *   - 방장 차례: 방장이 행동을 적용하고 { type: 'act', seq, a, hash }를 보낸다.
  *   - 참가자 차례: 참가자는 { type: 'intent', a }만 보내고, 방장이 차례 · 규칙을 확인해
  *     적용한 뒤 'act'로 돌려준다. 참가자는 'act'를 받았을 때만 판에 적용한다.
@@ -17,9 +20,11 @@
  */
 import { Engine } from '../engine.js';
 import { MultiGame } from '../multi.js';
+import { FirstRoll, rollDie } from '../firstRoll.js';
 
-// 엔진이 같은 시드로 같은 판을 만들어야 하므로, 엔진 동작이 바뀌면 올린다(2: 첫 순서 공정 섞기)
-export const PROTOCOL = 2;
+// 엔진이 같은 시드로 같은 판을 만들어야 하므로, 엔진 동작이나 주고받는 말이 바뀌면 올린다
+// (2: 첫 순서 공정 섞기, 3: 주사위 굴려 순서 정하기)
+export const PROTOCOL = 3;
 
 export class NetGame {
   /**
@@ -31,6 +36,8 @@ export class NetGame {
     this.isHost = isHost;
     this.mySeat = isHost ? 0 : 1;
     this.game = null;
+    this.roll = null;     // 순서 정하기(FirstRoll). 판이 시작된 뒤에도 결과를 보여 주려고 남겨 둔다
+    this.names = null;
     this.seq = 0;
     this.desync = false;
     this.lastCell = null; // 방금 놓인 칸 — 화면에서 한 번 튕기기
@@ -41,19 +48,51 @@ export class NetGame {
     link.on('message', function (msg) { self._onMessage(msg); });
   }
 
-  /** 방장: 새 판을 시작하고 참가자에게 알린다 */
+  /** 방장: 새 판 — 먼저 주사위를 굴려 첫 밤 순서를 정한다 */
   start(seed, names) {
     if (!this.isHost) return;
-    this._create(seed, names);
-    this.link.send({ type: 'start', v: PROTOCOL, seed: seed, names: names });
+    this.pendingSeed = seed;
+    this.names = names;
+    this.roll = new FirstRoll(2);
+    this.game = null;
+    this.link.send({ type: 'roll-begin', v: PROTOCOL, names: names });
     this.onChange();
   }
 
-  _create(seed, names) {
+  /** 순서 정하는 중인지 */
+  get rolling() { return !!this.roll && !this.game; }
+  /** 지금 내가 굴려야 하는지 */
+  get myRollNeeded() { return this.rolling && this.roll.needs(this.mySeat); }
+
+  /** 내 주사위 굴리기 */
+  rollMine() {
+    if (!this.myRollNeeded) return false;
+    if (this.isHost) return this._hostRoll(this.mySeat);
+    this.link.send({ type: 'roll-intent' });
+    return true;
+  }
+
+  // 방장: 한 자리를 굴리고 결과를 알린다. 순서가 다 정해지면 판을 시작한다
+  _hostRoll(seat) {
+    if (!this.rolling || !this.roll.needs(seat)) return false;
+    const die = rollDie();
+    this.roll.roll(seat, die);
+    this.link.send({ type: 'roll', seat: seat, die: die });
+    if (this.roll.done) {
+      const order = this.roll.order();
+      this._create(this.pendingSeed, this.names, order);
+      this.link.send({ type: 'start', v: PROTOCOL, seed: this.pendingSeed, names: this.names, firstOrder: order });
+    }
+    this.onChange();
+    return true;
+  }
+
+  _create(seed, names, firstOrder) {
+    this.names = names;
     this.game = new MultiGame({ seed: seed, nights: 8 }, [
       { type: 'human', name: names[0] },
       { type: 'human', name: names[1] }
-    ]);
+    ], firstOrder);
     this.seq = 0;
     this.desync = false;
     this.lastCell = null;
@@ -111,9 +150,22 @@ export class NetGame {
 
   _onMessage(msg) {
     if (!msg || typeof msg.type !== 'string') return;
-    if (msg.type === 'start' && !this.isHost) {
-      if (msg.v !== PROTOCOL) { this.onError('두 기기의 앱 버전이 달라요. 둘 다 새로 고침해 주세요.'); return; }
-      this._create(msg.seed, msg.names);
+    if ((msg.type === 'roll-begin' || msg.type === 'start') && !this.isHost && msg.v !== PROTOCOL) {
+      this.onError('두 기기의 앱 버전이 달라요. 둘 다 새로 고침해 주세요.');
+      return;
+    }
+    if (msg.type === 'roll-begin' && !this.isHost) {
+      this.names = msg.names;
+      this.roll = new FirstRoll(2);
+      this.game = null;
+      this.onChange();
+    } else if (msg.type === 'roll' && !this.isHost) {
+      if (this.rolling) this.roll.roll(msg.seat, msg.die);
+      this.onChange();
+    } else if (msg.type === 'roll-intent' && this.isHost) {
+      this._hostRoll(1);
+    } else if (msg.type === 'start' && !this.isHost) {
+      this._create(msg.seed, msg.names, Array.isArray(msg.firstOrder) ? msg.firstOrder : null);
       this.onChange();
     } else if (msg.type === 'intent' && this.isHost) {
       // 참가자의 행동: 참가자 차례이고 규칙에 맞을 때만 적용

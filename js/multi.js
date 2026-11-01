@@ -13,10 +13,12 @@ import { SoloGame } from './solo.js';
 export class MultiGame extends SoloGame {
   /**
    * @param level  makePracticeLevel()의 결과(시드 · 밤 수)
-   * @param seats  [{ type: 'human'|'ai', name }] 3~5개
+   * @param seats  [{ type: 'human'|'ai', name }] 2~5개
+   * @param firstOrder 첫 밤의 고르는 순서(자리 번호, 1위부터). 주사위를 굴려 정한 순서(js/firstRoll.js).
+   *                   없으면 엔진이 무작위로 정한다
    */
-  constructor(level, seats) {
-    super(level, 'practice', { seats: seats });
+  constructor(level, seats, firstOrder) {
+    super(level, 'practice', { seats: seats, firstOrder: firstOrder || null });
   }
 
   _buildAndStart() {
@@ -32,6 +34,12 @@ export class MultiGame extends SoloGame {
       scriptedPools: null
     });
     g.players.forEach(function (p, i) { p.name = seats[i].name; });
+    // 룰북 「게임 준비」 6: 첫 밤에 먼저 고르는 사람의 말을 출발 칸 맨 아래에 쌓는다.
+    // 엔진은 같은 칸이면 먼저 도착한(아래) 말부터 고르므로, 쌓은 순서를 도착 순서(음수)로 넣는다
+    const order = this.opts.firstOrder;
+    if (order && order.length === seats.length) {
+      order.forEach(function (id, rank) { g.players[id].arrival = rank - order.length; });
+    }
     Engine.startRound(g);
     this.g = g;
     this.selectedPi = null;
