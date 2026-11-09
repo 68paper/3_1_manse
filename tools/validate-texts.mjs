@@ -87,8 +87,11 @@ const sec = /const RULES_SECTIONS = \[([^\]]*)\]/.exec(uiSrc);
 (sec ? sec[1].match(/'[^']+'/g) : []).forEach(function (q) { need(q.slice(1, -1)); });
 ['rules.people.spy', 'quick.combos', 'quick.score', 'quick.crackdown'].forEach(need);
 
-// ---- 기기끼리 함께하기: link.html의 data-text ----
-(readFileSync(path.join(ROOT, 'link.html'), 'utf8').match(/data-text="[^"]+"/g) || []).forEach(function (m) { need(m.slice(11, -1)); });
+// ---- 처음 화면 · 기기끼리 함께하기: HTML의 data-text, 처음 화면 ⓘ 설명 카드 ----
+['index.html', 'link.html'].forEach(function (f) {
+  (readFileSync(path.join(ROOT, f), 'utf8').match(/data-text="[^"]+"/g) || []).forEach(function (m) { need(m.slice(11, -1)); });
+});
+(readFileSync(path.join(ROOT, 'index.html'), 'utf8').match(/data-info="[^"]+"/g) || []).forEach(function (m) { need('title.' + m.slice(11, -1) + '.more'); });
 
 // ---- 값 자리 ----
 const VARS = {

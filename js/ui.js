@@ -15,7 +15,7 @@ import {
 import { MultiGame } from './multi.js';
 import { TUTORIAL_SCENES, TutorialGame, sceneTitle, sceneSub, sceneCardCount } from './tutorial.js';
 // 글 파일(texts/*.md). 이 파일에는 첫 걸음 상태를 뜻하는 지역 변수 t가 많아 tx로 부른다
-import { loadTexts, t as tx, tText } from './texts.js';
+import { loadTexts, t as tx, tText, fillTextSlots } from './texts.js';
 import { FirstRoll, rollDie } from './firstRoll.js';
 import { quickRulesHtml, ensureQuickRulesStyle } from './quickRules.js';
 import { CrackdownGame, makeCrackdownLevel, nightOrdinal, CRACKDOWN_CONFIG } from './crackdown.js';
@@ -69,6 +69,7 @@ function showScreen(name) {
   });
   document.getElementById('overlay-panel').hidden = true;
   document.getElementById('info-modal').hidden = true;
+  document.getElementById('mode-sheet').hidden = true;
   clearTimeout(state.aiTimer);
   clearTimeout(state.dayTimer); state.dayTimer = null;
   clearRollTimers();
@@ -90,6 +91,30 @@ function toast(msg) {
 function renderTitleFlag() {
   document.getElementById('title-flag').innerHTML = taegeukgiFlag(240);
 }
+
+// 처음 화면 ⓘ: 놀이 방법 설명 카드. 글은 texts/title.md(title.<key>.more), [시작하기]는 메뉴 버튼과 같은 곳으로
+const MODE_INFO = {
+  tutorial: { title: '첫 걸음', nav: 'tutorial' },
+  endless: { title: '스무하루의 밤', nav: 'endless-start' },
+  crackdown: { title: '단속의 밤', nav: 'crackdown-start' },
+  practice: { title: '자유 연습', nav: 'practice-setup' },
+  link: { title: '기기끼리 함께하기', href: 'link.html' }
+};
+
+function openModeSheet(key) {
+  const m = MODE_INFO[key];
+  if (!m) return;
+  document.getElementById('mode-sheet-title').textContent = m.title;
+  document.getElementById('mode-sheet-body').innerHTML = tx('title.' + key + '.more');
+  document.getElementById('mode-sheet-actions').innerHTML =
+    (m.href ? '<a class="primary" href="' + m.href + '">시작하기</a>' : '<button class="primary" data-nav="' + m.nav + '">시작하기</button>') +
+    '<button class="ghost" id="mode-sheet-close">닫기</button>';
+  const sheet = document.getElementById('mode-sheet');
+  sheet.hidden = false;
+  document.getElementById('mode-sheet-close').focus({ preventScroll: true });
+}
+
+function closeModeSheet() { document.getElementById('mode-sheet').hidden = true; }
 
 // ------------------------------------------------------------------
 // 첫 걸음 — 하나로 이어지는 과정(js/tutorial.js). 기획: docs/첫걸음_개편_시나리오.md
@@ -1329,8 +1354,12 @@ function positionDawnTrack() {
 // ------------------------------------------------------------------
 function wireStaticEvents() {
   document.body.addEventListener('click', function (e) {
+    const info = e.target.closest('[data-info]');
+    if (info) { Sound.play('tap'); openModeSheet(info.dataset.info); return; }
+    if (e.target.closest('#mode-sheet-close') || e.target.id === 'mode-sheet') { closeModeSheet(); return; }
     const nav = e.target.closest('[data-nav]');
     if (nav) {
+      closeModeSheet();
       Sound.play('tap');
       const target = nav.dataset.nav;
       if (target === 'tutorial') renderTutorialHome();
@@ -1458,6 +1487,7 @@ function wireStaticEvents() {
     Sound.unlock();
     const modal = document.getElementById('info-modal');
     if (e.key === 'Escape' && !modal.hidden && !modal.dataset.buttonOnly) closeInfoModal();
+    if (e.key === 'Escape') closeModeSheet();
   }, { capture: true });
   document.addEventListener('visibilitychange', function () { Sound.setHidden(document.hidden); });
 }
@@ -1497,6 +1527,7 @@ async function init() {
   // 게임 속 글(texts/*.md)을 먼저 읽는다. 읽기 전에는 버튼을 눌러도 반응하지 않게, 다 읽은 뒤에 입력을 연결한다
   await loadTexts();
   buildStories();
+  fillTextSlots(document); // 처음 화면 메뉴의 한 줄 설명 등 data-text 자리
   wireStaticEvents();
   try { await loadCrackdownCards(); } catch (e) { /* 단속의 밤을 시작할 때 다시 시도 */ }
   registerServiceWorker();

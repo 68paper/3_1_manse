@@ -19,7 +19,7 @@
  */
 import { dieIcon } from './art.js';
 
-export const TEXT_FILES = ['tutorial', 'stories', 'crackdown', 'rules', 'link'];
+export const TEXT_FILES = ['title', 'tutorial', 'stories', 'crackdown', 'rules', 'link'];
 
 const store = new Map();
 const COLOR_WORD = { '흰': 'white', '검': 'black', '빨': 'red', '파': 'blue' };
