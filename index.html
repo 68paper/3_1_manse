@@ -100,11 +100,25 @@
   /* ---------- 타이틀 ---------- */
   #screen-title { justify-content: center; align-items: center; text-align: center; gap: 14px; }
   #title-flag { width: min(58vw, 220px); filter: drop-shadow(0 3px 0 rgba(0,0,0,.15)); }
+  #title-flag svg { display: block; width: 100%; height: auto; } /* 태극기 그림이 상자 폭을 따르게 */
   #screen-title h1 { font-size: 26px; }
   #screen-title .maker { font-size: 12px; opacity: .6; margin: 10px 0 0; }
   #screen-title .menu { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
   /* 기기끼리 함께하기(link.html, 시험판)로 가는 링크: 버튼과 같은 모양 */
   #screen-title .menu-link { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 12px 16px; border: 2px dashed var(--ink); border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 16px; }
+  /* 놀이 방법 버튼: 이름 아래 한 줄 설명, 옆에 ⓘ */
+  #screen-title .menu-row { display: flex; gap: 6px; align-items: stretch; }
+  #screen-title .menu-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 10px; }
+  #screen-title .menu-main .mi-title { font-size: 16px; }
+  #screen-title .menu-main .mi-line { font-size: 12px; opacity: .78; line-height: 1.35; word-break: keep-all; }
+  #screen-title .menu-info { flex-shrink: 0; width: 44px; padding: 0; font-size: 19px; border-width: 1.5px; }
+  /* 키가 작은 화면(작은 휴대폰)에서는 태극기와 간격을 줄여 메뉴가 한 화면에 들어오게 */
+  @media (max-height: 740px) {
+    #screen-title { gap: 8px; }
+    #title-flag { width: min(40vw, 150px); }
+    #screen-title .menu { gap: 8px; margin-top: 4px; }
+    #screen-title .menu-main { padding: 6px 10px; }
+  }
   #screen-title .menu-link .beta { font-size: 11px; font-weight: 700; background: var(--tg-red); color: var(--hanji); border-radius: 6px; padding: 1px 6px; }
 
   /* ---------- 첫 걸음: 과정 처음 화면 ---------- */
@@ -286,6 +300,12 @@
   .modal-card .modal-body { font-size: 14px; line-height: 1.6; }
   .modal-card .modal-body ul { margin: 4px 0 0; padding-left: 18px; opacity: .85; }
   .modal-card button { width: 100%; margin-top: 8px; }
+  .modal.sheet { align-items: flex-end; padding: 0; }
+  .modal.sheet .modal-card { max-width: 430px; border-radius: 16px 16px 0 0; border-bottom: none; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); animation: slideup .18s ease; }
+  .modal.sheet .modal-body ul { padding-left: 18px; }
+  .sheet-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .sheet-actions > * { width: 100%; margin: 0; }
+  .sheet-actions a.primary { display: flex; align-items: center; justify-content: center; min-height: 44px; border-radius: 10px; background: var(--ink); color: var(--hanji); text-decoration: none; font-size: 16px; }
   .modal-card .story-cells { display: flex; align-items: center; gap: 10px; font-size: 13px; opacity: .85; }
 
   .board-wrap { display: flex; justify-content: center; }
@@ -438,13 +458,31 @@
     <div id="title-flag"></div>
     <h1>3·1 만세 전야</h1>
     <div class="menu">
-      <button class="primary" data-nav="tutorial">첫 걸음</button>
-      <button data-nav="endless-start">스무하루의 밤</button>
-      <button data-nav="crackdown-start">단속의 밤</button>
-      <button data-nav="practice-setup">자유 연습</button>
-      <a class="menu-link" href="link.html">기기끼리 함께하기 <span class="beta">시험판</span></a>
-      <button data-nav="rules">규칙 보기</button>
-      <button class="ghost" data-nav="settings">설정</button>
+      <!-- 놀이 방법마다: 버튼(이름 + 한 줄 설명) + ⓘ(설명 카드). 설명 글은 texts/title.md -->
+      <div class="menu-row">
+        <button class="primary menu-main" data-nav="tutorial"><span class="mi-title">첫 걸음</span><span class="mi-line" data-text="title.tutorial.line"></span></button>
+        <button class="menu-info" data-info="tutorial" aria-label="첫 걸음 설명">ⓘ</button>
+      </div>
+      <div class="menu-row">
+        <button class="menu-main" data-nav="endless-start"><span class="mi-title">스무하루의 밤</span><span class="mi-line" data-text="title.endless.line"></span></button>
+        <button class="menu-info" data-info="endless" aria-label="스무하루의 밤 설명">ⓘ</button>
+      </div>
+      <div class="menu-row">
+        <button class="menu-main" data-nav="crackdown-start"><span class="mi-title">단속의 밤</span><span class="mi-line" data-text="title.crackdown.line"></span></button>
+        <button class="menu-info" data-info="crackdown" aria-label="단속의 밤 설명">ⓘ</button>
+      </div>
+      <div class="menu-row">
+        <button class="menu-main" data-nav="practice-setup"><span class="mi-title">자유 연습</span><span class="mi-line" data-text="title.practice.line"></span></button>
+        <button class="menu-info" data-info="practice" aria-label="자유 연습 설명">ⓘ</button>
+      </div>
+      <div class="menu-row">
+        <a class="menu-link menu-main" href="link.html"><span class="mi-title">기기끼리 함께하기 <span class="beta">시험판</span></span><span class="mi-line" data-text="title.link.line"></span></a>
+        <button class="menu-info" data-info="link" aria-label="기기끼리 함께하기 설명">ⓘ</button>
+      </div>
+      <div class="menu-row">
+        <button class="grow" data-nav="rules">규칙 보기</button>
+        <button class="ghost grow" data-nav="settings">설정</button>
+      </div>
     </div>
     <p class="maker">만든 사람 우치</p>
   </section>
@@ -572,6 +610,14 @@
       <div class="modal-goal" id="info-modal-tag"></div>
       <div class="modal-body" id="info-modal-body"></div>
       <button class="primary" id="info-modal-close">닫기</button>
+    </div>
+  </div>
+  <!-- 처음 화면 ⓘ: 놀이 방법 설명 카드(아래에서 올라옴) -->
+  <div class="modal sheet" id="mode-sheet" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mode-sheet-title">
+      <h3 id="mode-sheet-title"></h3>
+      <div class="modal-body" id="mode-sheet-body"></div>
+      <div id="mode-sheet-actions" class="sheet-actions"></div>
     </div>
   </div>
   <div class="toast" id="toast"></div>
