@@ -12,7 +12,7 @@ import { NetGame, MAX_PLAYERS, NIGHT_OPTIONS, cleanName } from './netgame.js';
 import { ConnLog, deviceSummary } from './connlog.js';
 import { Engine } from '../engine.js';
 import { dieIcon, pieceIcon } from '../art.js';
-import { nightDate } from '../story.js';
+import { nightDate, latestStory, MARCH_FIRST, buildStories } from '../story.js';
 import { quickRulesHtml, ensureQuickRulesStyle } from '../quickRules.js';
 import { loadTexts, fillTextSlots } from '../texts.js';
 import { randomSeed } from '../levelSetup.js';
@@ -34,7 +34,8 @@ const state = {
   guestLink: null,  // 참가자: 방장과의 연결
   selectedPi: null, // 내 차례에 고른 광장 주사위
   scan: null,       // 열려 있는 카메라
-  heard: null       // 소리용: 마지막으로 본 판의 기록(누가 무엇을 했는지 비교)
+  heard: null,      // 소리용: 마지막으로 본 판의 기록(누가 무엇을 했는지 비교)
+  storyShown: null  // 스무하루 밤: 이야기 팝업을 이미 띄운 판 · 밤({ game, night })
 };
 
 const $ = function (id) { return document.getElementById(id); };
@@ -331,6 +332,33 @@ function boardHtml(board, cls, opts) {
   return html + '</div>';
 }
 
+// ---- 팝업(규칙 한눈에 · 이야기 카드 공용) ----
+function openModal(title, html) {
+  $('rules-title').textContent = title;
+  $('rules-body').innerHTML = html;
+  $('rules-modal').hidden = false;
+  // 닫기 버튼에 초점을 주되, 긴 내용이 아래로 밀려 내려가지 않게(맨 위부터 보이게)
+  $('btn-rules-close').focus({ preventScroll: true });
+  document.querySelector('#rules-modal .modal-card').scrollTop = 0;
+}
+
+// ---- 스무하루 밤: 이야기 카드(스무하루의 밤과 같은 글, texts/stories.md) ----
+function storyHtml(story, tag) {
+  return '<div class="story-tag">' + esc(tag) + '</div>' + story.body;
+}
+
+// 이야기 카드가 있는 밤이 시작되면 각자 휴대폰에 한 번 띄운다. 각자 닫고, 판은 기다리지 않는다
+function maybeShowStory(net) {
+  const g = net.g;
+  if (net.nights !== 21 || !g || g.done || $('step-play').hidden || !$('rules-modal').hidden) return;
+  const seen = state.storyShown;
+  if (seen && seen.game === net.game && seen.night === g.round) return;
+  state.storyShown = { game: net.game, night: g.round };
+  const cur = latestStory(g.round);
+  if (cur.night !== g.round) return; // 이 밤에 새 이야기가 없으면 띄우지 않는다
+  openModal(cur.story.title, storyHtml(cur.story, nightDate(g.round) + ' 밤 · ' + cur.story.period));
+}
+
 function renderPlay() {
   const net = state.net;
   const body = $('play-body');
@@ -428,11 +456,15 @@ function renderPlay() {
     boards +
     (g.done ? '' : '<div class="pool">' + pool + '</div>') +
     (choices ? '<div class="opts">' + choices + '</div>' : '') +
+    // 스무하루 밤을 끝까지 두면 스무하루의 밤처럼 3월 1일 이야기
+    (g.done && net.nights === 21 ? '<div class="story-card"><div class="story-tag">' + esc(MARCH_FIRST.period) + '</div><h3>' + esc(MARCH_FIRST.title) + '</h3>' + MARCH_FIRST.body + '</div>' : '') +
     (g.done ? resultHtml(game) : '<div class="pieces">내 조각 ' + piecesHtml(me.parts, 24) + '</div>') +
+    (!g.done && net.nights === 21 ? '<button class="ghost story-btn" id="btn-story">' + esc(nightDate(g.round)) + ' 밤 이야기 다시 보기</button>' : '') +
     (canRestart ? '<div class="row"><button class="primary" id="btn-again">' + (net.gatheredCount >= 2 ? net.gatheredCount + '명으로 새 판' : '새 판(사람이 더 필요해요)') + '</button>' +
       '<button id="btn-more">사람 · 길이 바꾸기</button></div>' : '') +
     (g.done && !net.isHost && live ? '<p class="muted" style="text-align:center">방장이 새 판을 시작할 수 있어요.</p>' : '') +
     '<p class="muted" style="text-align:center">시험판 · ' + n + '명 · 판 확인 번호 ' + net.seq + (net.desync ? ' · 판이 어긋났어요' : '') + '</p>';
+  maybeShowStory(net);
 }
 
 // 첫 밤 순서 정하기: 모두 주사위를 굴려 눈이 큰 사람부터(같으면 그 사람들만 다시)
@@ -568,6 +600,12 @@ function applySoundSettings() {
 function onPlayClick(e) {
   const net = state.net;
   if (!net) return;
+  if (e.target.closest('#btn-story') && net.g) {
+    const cur = latestStory(net.g.round);
+    Sound.play('tap');
+    openModal(cur.story.title, storyHtml(cur.story, (cur.night ? nightDate(cur.night) + ' 밤 · ' : '') + cur.story.period));
+    return;
+  }
   if (e.target.closest('#btn-roll')) { net.rollMine(); return; }
   if (e.target.closest('#btn-again')) {
     if (net.gatheredCount < 2) { startHost(); return; }
@@ -620,11 +658,7 @@ function wire() {
   $('btn-rules').addEventListener('click', function () {
     Sound.play('tap');
     ensureQuickRulesStyle();
-    $('rules-body').innerHTML = quickRulesHtml();
-    $('rules-modal').hidden = false;
-    // 닫기 버튼에 초점을 주되, 긴 내용이 아래로 밀려 내려가지 않게(맨 위부터 보이게)
-    $('btn-rules-close').focus({ preventScroll: true });
-    document.querySelector('#rules-modal .modal-card').scrollTop = 0;
+    openModal('규칙 한눈에', quickRulesHtml());
   });
   $('btn-rules-close').addEventListener('click', function () { $('rules-modal').hidden = true; });
   $('rules-modal').addEventListener('click', function (e) { if (e.target.id === 'rules-modal') $('rules-modal').hidden = true; });
@@ -674,7 +708,8 @@ function registerServiceWorker() {
 wire();
 registerServiceWorker();
 // 안내 글(texts/link.md)과 규칙 한눈에(texts/rules.md)를 읽어 data-text 자리를 채운다
-loadTexts(['link', 'rules']).then(function () { fillTextSlots(); });
+// 스무하루 밤을 고르면 스무하루의 밤과 같은 이야기 카드(texts/stories.md)를 쓴다
+loadTexts(['link', 'rules', 'stories']).then(function () { fillTextSlots(); buildStories(); });
 // 소리: 브라우저는 첫 터치 뒤에만 소리를 낼 수 있다. 화면이 가려지면 배경음을 멈춘다
 applySoundSettings();
 document.addEventListener('pointerdown', function () { Sound.unlock(); }, { capture: true });
