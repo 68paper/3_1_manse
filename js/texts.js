@@ -18,6 +18,7 @@
  * 글을 못 찾으면 화면에 '⚠ 아이디'가 보인다. tools/validate-texts.mjs가 미리 잡아낸다.
  */
 import { dieIcon } from './art.js';
+import { escapeHtml as esc } from './common.js';
 
 export const TEXT_FILES = ['title', 'tutorial', 'stories', 'crackdown', 'rules', 'link'];
 
@@ -66,10 +67,6 @@ export async function loadTexts(names, base) {
 
 export function hasText(key) { return store.has(key); }
 export function textKeys() { return Array.from(store.keys()); }
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
-}
 
 // 한 줄 안의 꾸밈: **굵게**, {값}
 function inline(text, vars) {

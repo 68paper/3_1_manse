@@ -2,7 +2,7 @@
  * sw.js — 오프라인 캐시
  * 버전(CACHE_NAME)을 올리면 이전 캐시는 activate 단계에서 정리된다.
  */
-const CACHE_NAME = 'manse-eve-v29';
+const CACHE_NAME = 'manse-eve-v30';
 const PRECACHE = [
   './',
   './index.html',
@@ -20,6 +20,7 @@ const PRECACHE = [
   './js/firstRoll.js',
   './js/quickRules.js',
   './js/texts.js',
+  './js/common.js',
   // 게임 속 글(고치기 쉽게 따로 둔 마크다운)
   './texts/title.md',
   './texts/tutorial.md',

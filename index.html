@@ -95,7 +95,6 @@
   .muted { opacity: .7; font-size: 14px; }
   .center { text-align: center; }
   .spacer { flex: 1; }
-  hr.sep { border: none; border-top: 1px dashed var(--ink); opacity: .3; margin: 14px 0; }
 
   /* ---------- 타이틀 ---------- */
   #screen-title { justify-content: center; align-items: center; text-align: center; gap: 14px; }
@@ -253,6 +252,7 @@
   .p-head { display: flex; align-items: center; gap: 2px; font-size: 11px; min-width: 0; }
   .p-head .dot { width: 13px; height: 13px; font-size: 8px; }
   .p-head .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ranking .ai { font-size: 10px; font-weight: 700; background: var(--tg-blue); color: var(--hanji); border-radius: 4px; padding: 0 4px; }
   .p-head .ai { font-size: 8px; font-weight: 700; background: var(--tg-blue); color: var(--hanji); border-radius: 3px; padding: 0 2px; }
   .p-head .sc { font-family: var(--font-title); font-weight: 800; }
   .mini-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; padding: 1px; background: var(--ink); border-radius: 4px; }
@@ -261,11 +261,6 @@
   .mini-board .mn.eye svg { width: 82%; height: auto; display: block; }
   .mini-board .mn { position: absolute; right: 0; bottom: 0; width: 66%; height: 66%; display: flex; align-items: center; justify-content: center; background: var(--hanji); color: var(--ink); border: 1px solid var(--ink); border-radius: 3px 0 2px 0; font-family: var(--font-body); font-weight: 700; line-height: 1; font-size: 10px; font-size: 64cqw; }
   .mini-board img { display: block; width: 100%; height: 100%; }
-  .p-chip { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1.5px solid rgba(42,34,27,.35); border-radius: 14px; font-size: 13px; background: rgba(205,189,152,.25); max-width: 100%; }
-  .p-chip .nm { max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .p-chip .ai, .ranking .ai { font-size: 10px; font-weight: 700; background: var(--tg-blue); color: var(--hanji); border-radius: 4px; padding: 0 4px; }
-  .p-chip .sc { font-family: var(--font-title); font-weight: 800; }
-  .p-chip.cur { border-color: var(--tg-red); background: var(--hanji); box-shadow: 0 0 0 1.5px var(--tg-red); }
   .score-badge[hidden] { display: none; }
   .score-badge { font-family: var(--font-title); font-weight: 800; background: var(--ink); color: var(--hanji); border-radius: 8px; padding: 4px 10px; font-size: 15px; white-space: nowrap; }
 
@@ -439,12 +434,6 @@
   #dawn-result .goal-line { text-align: center; font-size: 14px; opacity: .75; margin-bottom: 10px; }
   #dawn-result .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   #dawn-result .actions .row { gap: 8px; }
-
-  .fx-stamp, .fx-scatter { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; }
-  .fx-stamp.show { animation: fxStamp .5s ease; }
-  .fx-scatter.show { animation: fxScatter .5s ease; }
-  @keyframes fxStamp { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; transform: scale(1.15); } 100% { opacity: 0; transform: scale(1.3); } }
-  @keyframes fxScatter { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(1.6); } }
 
   .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--ink); color: var(--hanji); padding: 8px 14px; border-radius: 20px; font-size: 13px; z-index: 50; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }

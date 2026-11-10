@@ -5,7 +5,7 @@
  * 가져다 DOM에 그리고, 탭 입력을 solo.js의 행동 함수로 그대로 넘긴다.
  */
 import {
-  SoloGame, PIECE_NAME, PIECE_ORDER,
+  SoloGame,
   makePracticeLevel, makeEndlessLevel, saveEndlessResult,
   requestPersistentStorage, getSettings, setSettings,
   getTutorialProgress, saveTutorialSceneDone, skipTutorial,
@@ -24,10 +24,10 @@ import {
   taegeukgiFlag, trigramIcon, dieIcon, lanternIcon, pieceIcon
 } from './art.js';
 import { Sound } from './audio.js';
+import { PIECE_NAME, PIECE_ORDER, COMBO_NAME, escapeHtml, applySoundSettings as applySound, registerServiceWorker } from './common.js';
 import { PROLOGUE, NIGHT_STORIES, MARCH_FIRST, nightDate, latestStory, buildStories } from './story.js';
 
 // 화면에 보이는 모둠 이름(규칙 보기와 같은 이름). 엔진의 TYPE_NAME은 판정용 설명이다.
-const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
 // 자유 연습: 자리(지방)마다 점수판 말 색
 const PAWN_COLORS = ['#c8312f', '#1f4e9a', '#3f7d4e', '#d9962b', '#7b4d8f'];
 
@@ -512,9 +512,7 @@ function renderSettings() {
   document.getElementById('toggle-sfx').checked = state.settings.sfx !== false;
 }
 
-function applySoundSettings() {
-  Sound.configure({ bgm: state.settings.bgm !== false, sfx: state.settings.sfx !== false });
-}
+function applySoundSettings() { applySound(state.settings); }
 
 // ------------------------------------------------------------------
 // 게임 화면 — 시작
@@ -1003,10 +1001,6 @@ function scheduleAi() {
     playActionSounds(before);
     renderGame();
   }, delay);
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
 }
 
 // 스무하루의 밤: 기록지 아래 이야기 패널. 가장 최근 카드를 펼쳐 두고, 그 전 이야기는 '지난 이야기'에 접어 둔다.
@@ -1511,12 +1505,6 @@ async function startCrackdown() {
   }
   if (!state.crackdownCards) { toast('단속 카드를 불러오지 못했어요.'); return; }
   startGame(makeCrackdownLevel(), 'crackdown');
-}
-
-function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* 무시: 오프라인 캐시는 선택 사항 */ });
-  }
 }
 
 async function init() {

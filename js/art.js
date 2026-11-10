@@ -21,11 +21,6 @@ export const PALETTE = {
   hanji: '#efe6d2',
   ink: '#2a221b',
   boardBg: '#cdbd98',
-  skyNight: '#141a2b',
-  skyDusk1: '#50536c',
-  skyDusk2: '#b98763',
-  skyDawn1: '#ebb866',
-  skyDawn2: '#f8ecd2',
   taegeukRed: '#c8312f',
   taegeukBlue: '#1f4e9a',
   dieBlack: '#1e1e1e',
@@ -34,14 +29,6 @@ export const PALETTE = {
   dieBlue: '#2c4f8f'
 };
 
-
-const SKY_STOPS = [PALETTE.skyNight, PALETTE.skyDusk1, PALETTE.skyDusk2, PALETTE.skyDawn1, PALETTE.skyDawn2];
-
-/** 밤(0) → 새벽(1) 진행도에 따른 하늘 그라데이션 CSS 값 */
-export function skyGradient(t) {
-  // t: 0(밤) ~ 1(새벽). 다섯 정지점을 균등 배치.
-  return 'linear-gradient(180deg, ' + SKY_STOPS.join(', ') + ')';
-}
 
 // ------------------------------------------------------------------
 // 태극 (S자) — 표준 세로 공식을 만든 뒤 -45도 회전해 대각선 버전으로 만든다
@@ -115,7 +102,7 @@ export function trigramIcon(key, size, filled, angleDeg) {
   const gapMid = size * 0.10;   // 음(깨진 막대)의 가운데 틈
   const stackGap = size * 0.19; // 막대 사이 간격(대각선 방향)
   const color = filled ? PALETTE.ink : 'none';
-  const strokeColor = filled ? PALETTE.ink : PALETTE.ink;
+  const strokeColor = PALETTE.ink;
   const opacity = filled ? '1' : '0.28';
   // 회전 전 좌표계: 막대는 가로(길이=barLen, x방향), 3개가 세로(y방향)로 쌓임.
   // 이후 -45도 회전해 "막대는 대각선에 수직, 쌓임은 대각선과 나란"하게 만든다.
@@ -201,18 +188,4 @@ export function lanternIcon(size, lit) {
     ${lit ? `<ellipse cx="${size / 2}" cy="${y + h / 2}" rx="${w * 0.22}" ry="${h * 0.28}" fill="${flameColor}"/>` : ''}
     <rect x="${x - size * 0.03}" y="${y + h}" width="${w + size * 0.06}" height="${size * 0.06}" fill="${strokeColor}"/>
   </svg>`;
-}
-
-// ------------------------------------------------------------------
-// 연출: 도장 찍힘 / 흩어짐 효과 (짧은 CSS 애니메이션용 오버레이 마크업)
-// ------------------------------------------------------------------
-export function stampBurstMarkup() {
-  return `<svg viewBox="0 0 40 40" class="fx-stamp" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="20" cy="20" r="16" fill="none" stroke="${PALETTE.ink}" stroke-width="4"/>
-  </svg>`;
-}
-export function scatterBurstMarkup() {
-  const dots = [[6, 6], [34, 6], [6, 34], [34, 34], [20, 2], [2, 20], [38, 20], [20, 38]]
-    .map(([x, y]) => `<rect x="${x - 2}" y="${y - 2}" width="4" height="4" fill="${PALETTE.ink}"/>`).join('');
-  return `<svg viewBox="0 0 40 40" class="fx-scatter" xmlns="http://www.w3.org/2000/svg">${dots}</svg>`;
 }
