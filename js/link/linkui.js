@@ -12,6 +12,7 @@ import { NetGame, MAX_PLAYERS, NIGHT_OPTIONS, cleanName } from './netgame.js';
 import { ConnLog, deviceSummary } from './connlog.js';
 import { Engine } from '../engine.js';
 import { dieIcon, pieceIcon } from '../art.js';
+import { boardCellsHtml } from '../boardView.js';
 import { nightDate, latestStory, MARCH_FIRST, buildStories } from '../story.js';
 import { quickRulesHtml, ensureQuickRulesStyle } from '../quickRules.js';
 import { loadTexts, fillTextSlots } from '../texts.js';
@@ -315,16 +316,7 @@ function piecesHtml(parts, size) {
 
 function boardHtml(board, cls, opts) {
   opts = opts || {};
-  let html = '<div class="board ' + cls + '">';
-  for (let i = 0; i < 9; i++) {
-    const d = board[i];
-    const c = ['cell'];
-    if (opts.valid && opts.valid.indexOf(i) >= 0) c.push('valid');
-    if (opts.choosable && opts.choosable.indexOf(i) >= 0) c.push('choosable');
-    if (opts.pulse === i) c.push('pulse');
-    html += '<div class="' + c.join(' ') + '"' + (opts.clickable ? ' data-cell="' + i + '"' : '') + '>' + (d ? dieIcon(d.color, d.value, opts.size || 50) : '') + '</div>';
-  }
-  return html + '</div>';
+  return '<div class="board ' + cls + '">' + boardCellsHtml(board, Object.assign({}, opts, { clickable: !!opts.clickable })) + '</div>';
 }
 
 // ---- 팝업(규칙 한눈에 · 이야기 카드 공용) ----

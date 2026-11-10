@@ -24,6 +24,7 @@ import {
   taegeukgiFlag, trigramIcon, dieIcon, lanternIcon, pieceIcon
 } from './art.js';
 import { Sound } from './audio.js';
+import { boardCellsHtml } from './boardView.js';
 import { PIECE_NAME, PIECE_ORDER, COMBO_NAME, escapeHtml, applySoundSettings as applySound, registerServiceWorker } from './common.js';
 import { PROLOGUE, NIGHT_STORIES, MARCH_FIRST, nightDate, latestStory, buildStories } from './story.js';
 
@@ -594,32 +595,30 @@ function renderGame() {
   // 판
   const boardEl = document.getElementById('board');
   const showScatterHint = currentHintsEnabled() && snap.phase === 'place' && snap.selectedPi != null;
-  let boardHtml = '';
-  for (let i = 0; i < 9; i++) {
-    const die = snap.board[i];
-    const classes = ['cell'];
-    let mark = '';
-    if (cdMarks.indexOf(i) >= 0) {
-      classes.push(die ? 'cd-guard' : 'cd-mark');
-      mark = die ? '<span class="cd-guard-tag">지켜 냄</span>' : '<span class="cd-eye">' + MINI_EYE + '</span>';
-    }
-    if (state.dayCell && state.dayCell.cell === i) classes.push(state.dayCell.kind === 'spy' ? 'cd-hit' : 'cd-saved');
-    if (snap.phase === 'place' && snap.selectedPi != null && snap.validCells.indexOf(i) >= 0) {
-      if (tut && tut.cells.length) {
-        if (tut.cells.indexOf(i) >= 0) classes.push('valid', 'tut-target');
-      } else {
-        classes.push('valid');
-        if (showScatterHint && g.wouldScatterAt(snap.selectedPi, i)) classes.push('scatter-warn');
+  const placing = snap.phase === 'place' && snap.selectedPi != null;
+  const tutCells = placing && tut && tut.cells.length ? tut.cells : null; // 첫 걸음: 정해 준 칸만 놓을 수 있게 보인다
+  const eyePick = (snap.phase === 'combo_eye' || snap.phase === 'blocked_eye') && snap.eyeOptions;
+  boardEl.innerHTML = boardCellsHtml(snap.board, {
+    valid: placing ? snap.validCells.filter(function (i) { return !tutCells || tutCells.indexOf(i) >= 0; }) : null,
+    choosable: (snap.phase === 'combo_keep' && snap.keepLine ? snap.keepLine : []).concat(eyePick || []),
+    pulse: state.pulseCell,
+    decorate: function (i, die) {
+      const classes = [];
+      let extra = '';
+      if (cdMarks.indexOf(i) >= 0) {
+        classes.push(die ? 'cd-guard' : 'cd-mark');
+        extra = die ? '<span class="cd-guard-tag">지켜 냄</span>' : '<span class="cd-eye">' + MINI_EYE + '</span>';
       }
+      if (state.dayCell && state.dayCell.cell === i) classes.push(state.dayCell.kind === 'spy' ? 'cd-hit' : 'cd-saved');
+      if (placing && snap.validCells.indexOf(i) >= 0) {
+        if (tutCells) { if (tutCells.indexOf(i) >= 0) classes.push('tut-target'); }
+        else if (showScatterHint && g.wouldScatterAt(snap.selectedPi, i)) classes.push('scatter-warn');
+      }
+      if (tut && tut.keep.indexOf(i) >= 0) classes.push('tut-target');
+      if (shake && shake.kind === 'cell' && shake.id === i) classes.push('shake');
+      return { classes: classes, extra: extra };
     }
-    if (snap.phase === 'combo_keep' && snap.keepLine && snap.keepLine.indexOf(i) >= 0) classes.push('choosable');
-    if (tut && tut.keep.indexOf(i) >= 0) classes.push('tut-target');
-    if (shake && shake.kind === 'cell' && shake.id === i) classes.push('shake');
-    if ((snap.phase === 'combo_eye' || snap.phase === 'blocked_eye') && snap.eyeOptions && snap.eyeOptions.indexOf(i) >= 0) classes.push('choosable');
-    if (state.pulseCell === i) classes.push('pulse');
-    boardHtml += '<div class="' + classes.join(' ') + '" data-cell="' + i + '">' + (die ? dieIcon(die.color, die.value, 50) : '') + mark + '</div>';
-  }
-  boardEl.innerHTML = boardHtml;
+  });
   state.pulseCell = null; // 튕김은 놓은 직후 한 번만
   state.dayCell = null;
 

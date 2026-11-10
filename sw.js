@@ -7,6 +7,9 @@ const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
+  './css/base.css',
+  './css/main.css',
+  './css/link.css',
   './js/engine.js',
   './js/levelSetup.js',
   './js/solo.js',
@@ -21,6 +24,7 @@ const PRECACHE = [
   './js/quickRules.js',
   './js/texts.js',
   './js/common.js',
+  './js/boardView.js',
   // 게임 속 글(고치기 쉽게 따로 둔 마크다운)
   './texts/title.md',
   './texts/tutorial.md',
