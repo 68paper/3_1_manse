@@ -39,7 +39,7 @@ export const CRACKDOWN_CONFIG = {
   STARS: [1, 6, 10]      // 성공 시 손에 든 장 수 기준: 별 1 · 2 · 3
 };
 
-export const NIGHT_ORDINAL = ['첫째', '둘째', '셋째', '넷째', '다섯째', '여섯째', '일곱째', '여덟째', '아홉째', '열째'];
+const NIGHT_ORDINAL = ['첫째', '둘째', '셋째', '넷째', '다섯째', '여섯째', '일곱째', '여덟째', '아홉째', '열째'];
 export function nightOrdinal(n) { return NIGHT_ORDINAL[n - 1] || (n + '번째'); }
 
 /**

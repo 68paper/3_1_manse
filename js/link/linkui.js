@@ -12,16 +12,15 @@ import { NetGame, MAX_PLAYERS, NIGHT_OPTIONS, cleanName } from './netgame.js';
 import { ConnLog, deviceSummary } from './connlog.js';
 import { Engine } from '../engine.js';
 import { dieIcon, pieceIcon } from '../art.js';
+import { boardCellsHtml } from '../boardView.js';
 import { nightDate, latestStory, MARCH_FIRST, buildStories } from '../story.js';
 import { quickRulesHtml, ensureQuickRulesStyle } from '../quickRules.js';
 import { loadTexts, fillTextSlots } from '../texts.js';
 import { randomSeed } from '../levelSetup.js';
 import { Sound } from '../audio.js';
 import { getSettings } from '../solo.js';
+import { PIECE_NAME, PIECE_ORDER, COMBO_NAME, escapeHtml as esc, applySoundSettings as applySound, registerServiceWorker } from '../common.js';
 
-const PIECE_NAME = { taegeuk: '태극', geon: '건', ri: '리', gam: '감', gon: '곤' };
-const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
-const COMBO_NAME = { same: '한뜻', consec: '연락망', color: '한동네' };
 const NAME_KEY = 'manse-eve:v1:linkName';
 const NIGHTS_KEY = 'manse-eve:v1:linkNights';
 
@@ -40,10 +39,7 @@ const state = {
 
 const $ = function (id) { return document.getElementById(id); };
 
-// 닉네임은 다른 기기에서 온 글자이므로 화면에 넣기 전에 꼭 바꿔 둔다
-function esc(text) {
-  return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
-}
+// 닉네임은 다른 기기에서 온 글자이므로 화면에 넣기 전에 꼭 esc()로 바꿔 둔다
 
 function myName() {
   const v = cleanName($('my-name').value);
@@ -320,16 +316,7 @@ function piecesHtml(parts, size) {
 
 function boardHtml(board, cls, opts) {
   opts = opts || {};
-  let html = '<div class="board ' + cls + '">';
-  for (let i = 0; i < 9; i++) {
-    const d = board[i];
-    const c = ['cell'];
-    if (opts.valid && opts.valid.indexOf(i) >= 0) c.push('valid');
-    if (opts.choosable && opts.choosable.indexOf(i) >= 0) c.push('choosable');
-    if (opts.pulse === i) c.push('pulse');
-    html += '<div class="' + c.join(' ') + '"' + (opts.clickable ? ' data-cell="' + i + '"' : '') + '>' + (d ? dieIcon(d.color, d.value, opts.size || 50) : '') + '</div>';
-  }
-  return html + '</div>';
+  return '<div class="board ' + cls + '">' + boardCellsHtml(board, Object.assign({}, opts, { clickable: !!opts.clickable })) + '</div>';
 }
 
 // ---- 팝업(규칙 한눈에 · 이야기 카드 공용) ----
@@ -592,10 +579,7 @@ function playNetSounds() {
   else if (after.round > before.round) Sound.play('night', d + 0.3);
 }
 
-function applySoundSettings() {
-  const st = getSettings();
-  Sound.configure({ bgm: st.bgm !== false, sfx: st.sfx !== false });
-}
+function applySoundSettings() { applySound(getSettings()); }
 
 function onPlayClick(e) {
   const net = state.net;
@@ -698,15 +682,8 @@ function wire() {
   $('play-body').addEventListener('click', onPlayClick);
 }
 
-// 이 화면만 열어도 오프라인 저장이 되도록(본 화면과 같은 sw.js)
-function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* 무시: 오프라인 저장은 선택 사항 */ });
-  }
-}
-
 wire();
-registerServiceWorker();
+registerServiceWorker(); // 이 화면만 열어도 오프라인 저장이 되도록(본 화면과 같은 sw.js)
 // 안내 글(texts/link.md)과 규칙 한눈에(texts/rules.md)를 읽어 data-text 자리를 채운다
 // 스무하루 밤을 고르면 스무하루의 밤과 같은 이야기 카드(texts/stories.md)를 쓴다
 loadTexts(['link', 'rules', 'stories']).then(function () { fillTextSlots(); buildStories(); });

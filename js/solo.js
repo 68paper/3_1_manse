@@ -29,8 +29,6 @@ function storageSet(key, value) {
   catch (e) { return false; }
 }
 
-export const PIECE_NAME = { taegeuk: '태극', geon: '건', ri: '리', gam: '감', gon: '곤' };
-export const PIECE_ORDER = ['taegeuk', 'geon', 'ri', 'gam', 'gon'];
 
 /**
  * SoloGame — 화면(ui.js)이 쓰는 얇은 래퍼.
